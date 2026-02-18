@@ -664,6 +664,9 @@ def _build_tubes_query(search='', box='', status='', tube_type='', limit=200):
 
     if tube_type:
         query = query.filter(Tube.tube_type == tube_type)
+    else:
+        # Par défaut, exclure les tubes archivés (deleted)
+        query = query.filter(Tube.tube_type != 'deleted')
 
     if status:
         if status == 'Empty':
@@ -921,13 +924,35 @@ def update_tube(id):
     """Update a tube"""
     tube = Tube.query.get_or_404(id)
     data = request.json
-    
+
+    # Archivage : si le type passe à "deleted", sauvegarder la position dans les notes
+    new_type = data.get('tube_type')
+    if new_type == 'deleted' and tube.tube_type != 'deleted':
+        archive_info = []
+        if tube.box:
+            archive_info.append(f"Boîte: {tube.box.name}")
+            if tube.box.freezer:
+                archive_info.append(f"Congélateur: {tube.box.freezer}")
+        if tube.position_row and tube.position_col:
+            row_letter = chr(ord('A') + tube.position_row - 1) if 1 <= tube.position_row <= 26 else str(tube.position_row)
+            archive_info.append(f"Position: {row_letter}{tube.position_col}")
+        if archive_info:
+            prefix = f"[Archivé le {datetime.now().strftime('%Y-%m-%d')}] {', '.join(archive_info)}"
+            tube.notes = f"{prefix}\n{tube.notes}" if tube.notes else prefix
+        tube.box_id = None
+        tube.position_row = None
+        tube.position_col = None
+
     for key in ['barcode', 'sample_id', 'box_id', 'position_row', 'position_col',
                 'concentration', 'quality', 'initial_volume', 'current_volume',
                 'source', 'tube_type', 'notes']:
         if key in data:
-            setattr(tube, key, data[key])
-    
+            value = data[key]
+            # Ne pas écraser une FK existante par None (protection contre le bug select async)
+            if value is None and key in ('sample_id', 'box_id') and getattr(tube, key) is not None:
+                continue
+            setattr(tube, key, value)
+
     db.session.commit()
     return jsonify(tube.to_dict())
 

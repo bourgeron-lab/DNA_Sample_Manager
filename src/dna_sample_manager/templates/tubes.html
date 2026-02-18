@@ -56,6 +56,7 @@
                         <option value="">All Types</option>
                         <option value="stock">Stock</option>
                         <option value="working">Working</option>
+                        <option value="deleted">Supprimé</option>
                     </select>
                 </div>
                 <div class="col-md-3 d-flex gap-2 align-items-start">
@@ -194,6 +195,7 @@
                             <select class="form-select" id="tubeType">
                                 <option value="stock">Stock</option>
                                 <option value="working">Working</option>
+                                <option value="deleted">Supprimé (archivé)</option>
                             </select>
                         </div>
                     </div>
@@ -265,6 +267,7 @@ function esc(str) {
 
 let allTubes = [];
 let boxes = [];
+let currentEditTube = null;
 let samples = [];
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -372,7 +375,7 @@ function displayTubes() {
             <td>${tube.concentration ? tube.concentration + ' ng/µL' : '-'}</td>
             <td>${tube.current_volume ? tube.current_volume + ' µL' : '-'}</td>
             <td><span class="badge badge-status ${statusClass}">${esc(tube.status)}</span></td>
-            <td><span class="badge bg-${tube.tube_type === 'stock' ? 'primary' : 'warning'}">${esc(tube.tube_type)}</span></td>
+            <td><span class="badge bg-${tube.tube_type === 'stock' ? 'primary' : tube.tube_type === 'working' ? 'warning' : 'danger'}">${esc(tube.tube_type)}</span></td>
             <td>
                 <button class="btn btn-sm btn-outline-warning btn-action" onclick="openUsageModal(${tube.id}, '${esc(tube.barcode)}')" title="Record Usage">
                     <i class="bi bi-arrow-down-circle"></i>
@@ -412,6 +415,7 @@ function exportTubes(format) {
 }
 
 function openAddTubeModal() {
+    currentEditTube = null;
     document.getElementById('tubeModalTitle').textContent = 'Add Tube';
     document.getElementById('tubeForm').reset();
     document.getElementById('tubeId').value = '';
@@ -420,7 +424,8 @@ function openAddTubeModal() {
 function editTube(id) {
     const tube = allTubes.find(t => t.id === id);
     if (!tube) return;
-    
+    currentEditTube = tube;
+
     document.getElementById('tubeModalTitle').textContent = 'Edit Tube';
     document.getElementById('tubeId').value = tube.id;
     document.getElementById('tubeBarcode').value = tube.barcode || '';
@@ -460,7 +465,23 @@ function saveTube() {
         alert('Barcode is required');
         return;
     }
-    
+
+    // En édition : ne pas écraser sample_id/box_id si le select est vide
+    // (protection contre les selects non chargés)
+    if (id && currentEditTube) {
+        if (!data.sample_id && currentEditTube.sample_id) {
+            delete data.sample_id;
+        }
+        if (!data.box_id && currentEditTube.box_id) {
+            delete data.box_id;
+        }
+    }
+
+    // Confirmation avant archivage
+    if (data.tube_type === 'deleted' && currentEditTube && currentEditTube.tube_type !== 'deleted') {
+        if (!confirm('Archiver ce tube ? Sa position sera libérée dans la boîte.')) return;
+    }
+
     const url = id ? `/api/tubes/${id}` : '/api/tubes';
     const method = id ? 'PUT' : 'POST';
     
