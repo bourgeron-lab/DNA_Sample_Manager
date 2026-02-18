@@ -1,0 +1,546 @@
+{% extends "base.html" %}
+
+{% block title %}Tubes - DNA Sample Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+.table thead th {
+    font-size: 0.85rem;
+    white-space: nowrap;
+    padding: 0.5rem 0.3rem;
+}
+.table tbody td {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.3rem;
+    white-space: nowrap;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-droplet"></i> Tube Management</h2>
+        <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#tubeModal" onclick="openAddTubeModal()">
+            <i class="bi bi-plus-circle"></i> Add Tube
+        </button>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body filter-section">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" id="searchTube" 
+                               placeholder="Search barcode or sample...">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterBox">
+                        <option value="">All Boxes</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterStatus">
+                        <option value="">All Status</option>
+                        <option value="Available">Available</option>
+                        <option value="Low">Low</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Empty">Empty</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterType">
+                        <option value="">All Types</option>
+                        <option value="stock">Stock</option>
+                        <option value="working">Working</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex gap-2 align-items-start">
+                    <button class="btn btn-outline-secondary" onclick="resetFilters()">
+                        <i class="bi bi-x-circle"></i> Reset
+                    </button>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-success dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-download"></i> Exporter
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="exportTubes('tsv'); return false;">
+                                <i class="bi bi-filetype-csv"></i> TSV (texte tabulé)
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportTubes('xlsx'); return false;">
+                                <i class="bi bi-file-earmark-excel"></i> Excel (.xlsx)
+                            </a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tubes Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Tubes List</span>
+            <span class="badge bg-info" id="tubeCount">0 tubes</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Barcode</th>
+                            <th>Sample</th>
+                            <th>ID Individu</th>
+                            <th>Box</th>
+                            <th>Frigo</th>
+                            <th>Position</th>
+                            <th>Concentration</th>
+                            <th>Volume</th>
+                            <th>Status</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tubesTable">
+                        <tr>
+                            <td colspan="11" class="text-center">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tube Modal -->
+<div class="modal fade" id="tubeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tubeModalTitle">Add Tube</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="tubeForm">
+                    <input type="hidden" id="tubeId">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Barcode *</label>
+                            <input type="text" class="form-control" id="tubeBarcode" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Sample</label>
+                            <select class="form-select" id="tubeSample">
+                                <option value="">-- Select Sample --</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Box</label>
+                            <select class="form-select" id="tubeBox">
+                                <option value="">-- Select Box --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Row (1-9 = A-I)</label>
+                            <input type="number" class="form-control" id="tubeRow" min="1" max="9">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Column (1-9)</label>
+                            <input type="number" class="form-control" id="tubeCol" min="1" max="9">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Concentration (ng/µL)</label>
+                            <input type="number" class="form-control" id="tubeConcentration" step="0.1">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Initial Volume (µL)</label>
+                            <input type="number" class="form-control" id="tubeInitialVolume" step="0.1">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Current Volume (µL)</label>
+                            <input type="number" class="form-control" id="tubeCurrentVolume" step="0.1">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Quality</label>
+                            <select class="form-select" id="tubeQuality">
+                                <option value="">-- Select --</option>
+                                <option value="Good">Good</option>
+                                <option value="Average">Average</option>
+                                <option value="Poor">Poor</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Source</label>
+                            <select class="form-select" id="tubeSource">
+                                <option value="">-- Select --</option>
+                                <option value="Blood">Blood</option>
+                                <option value="Saliva">Saliva</option>
+                                <option value="Tissue">Tissue</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Tube Type</label>
+                            <select class="form-select" id="tubeType">
+                                <option value="stock">Stock</option>
+                                <option value="working">Working</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="tubeNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-info" onclick="saveTube()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Usage Modal -->
+<div class="modal fade" id="usageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Record Usage</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="usageForm">
+                    <input type="hidden" id="usageTubeId">
+                    <div class="mb-3">
+                        <label class="form-label">Tube</label>
+                        <input type="text" class="form-control" id="usageTubeBarcode" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">User Name *</label>
+                        <input type="text" class="form-control" id="usageUser" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Volume Taken (µL) *</label>
+                        <input type="number" class="form-control" id="usageVolume" step="0.1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Purpose</label>
+                        <input type="text" class="form-control" id="usagePurpose">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="usageNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="saveUsage()">Record Usage</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// XSS escaping helper
+function esc(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+}
+
+let allTubes = [];
+let boxes = [];
+let samples = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadFilters();
+    loadTubes();
+    
+    // Search listener
+    let searchTimeout;
+    document.getElementById('searchTube').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadTubes, 300);
+    });
+    
+    // Filter listeners
+    ['filterBox', 'filterStatus', 'filterType'].forEach(id => {
+        document.getElementById(id).addEventListener('change', loadTubes);
+    });
+});
+
+function loadFilters() {
+    // Load boxes
+    fetch('/api/boxes')
+        .then(response => response.json())
+        .then(data => {
+            boxes = data || [];
+            const filterSelect = document.getElementById('filterBox');
+            const modalSelect = document.getElementById('tubeBox');
+            
+            boxes.forEach(box => {
+                const option = document.createElement('option');
+                option.value = box.id;
+                option.textContent = box.name || `Box ${box.id}`;
+                filterSelect.appendChild(option.cloneNode(true));
+                modalSelect.appendChild(option);
+            });
+        })
+        .catch(err => console.error('Error loading boxes:', err));
+    
+    // Load samples
+    fetch('/api/samples?limit=1000')
+        .then(response => response.json())
+        .then(data => {
+            samples = data || [];
+            const select = document.getElementById('tubeSample');
+            samples.forEach(sample => {
+                const option = document.createElement('option');
+                option.value = sample.id;
+                option.textContent = `${sample.sample_id}${sample.individual_code ? ' (' + sample.individual_code + ')' : ''}`;
+                select.appendChild(option);
+            });
+        })
+        .catch(err => console.error('Error loading samples:', err));
+}
+
+function loadTubes() {
+    const search = document.getElementById('searchTube').value;
+    const box = document.getElementById('filterBox').value;
+    const status = document.getElementById('filterStatus').value;
+    const type = document.getElementById('filterType').value;
+    
+    let url = '/api/tubes?';
+    if (search) url += `search=${encodeURIComponent(search)}&`;
+    if (box) url += `box=${box}&`;
+    if (status) url += `status=${encodeURIComponent(status)}&`;
+    if (type) url += `type=${encodeURIComponent(type)}&`;
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            allTubes = data || [];
+            displayTubes();
+        })
+        .catch(err => {
+            console.error('Error loading tubes:', err);
+            document.getElementById('tubesTable').innerHTML = 
+                '<tr><td colspan="9" class="text-center text-danger">Error loading tubes</td></tr>';
+        });
+}
+
+function displayTubes() {
+    const tbody = document.getElementById('tubesTable');
+    document.getElementById('tubeCount').textContent = `${allTubes.length} tubes`;
+    
+    if (allTubes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No tubes found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = allTubes.map(tube => {
+        const statusClass = {
+            'Available': 'badge-available',
+            'Low': 'badge-low',
+            'Critical': 'badge-critical',
+            'Empty': 'badge-empty'
+        }[tube.status] || 'bg-secondary';
+        
+        return `
+        <tr>
+            <td><code style="font-family: 'SF Mono', Monaco, monospace; font-weight: 600;">${esc(tube.barcode)}</code></td>
+            <td>${tube.sample_code ? esc(tube.sample_code) : '<span class="text-muted">-</span>'}</td>
+            <td>${tube.individual_id ? '<strong>' + esc(tube.individual_id) + '</strong>' : '<span class="text-muted">-</span>'}</td>
+            <td>${tube.box_name ? esc(tube.box_name) : '<span class="text-muted">-</span>'}</td>
+            <td><small>${esc(tube.freezer) || '-'}</small></td>
+            <td>${esc(tube.position_display) || '-'}</td>
+            <td>${tube.concentration ? tube.concentration + ' ng/µL' : '-'}</td>
+            <td>${tube.current_volume ? tube.current_volume + ' µL' : '-'}</td>
+            <td><span class="badge badge-status ${statusClass}">${esc(tube.status)}</span></td>
+            <td><span class="badge bg-${tube.tube_type === 'stock' ? 'primary' : 'warning'}">${esc(tube.tube_type)}</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline-warning btn-action" onclick="openUsageModal(${tube.id}, '${esc(tube.barcode)}')" title="Record Usage">
+                    <i class="bi bi-arrow-down-circle"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary btn-action" onclick="editTube(${tube.id})" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteTube(${tube.id})" title="Delete">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `}).join('');
+}
+
+function resetFilters() {
+    document.getElementById('searchTube').value = '';
+    document.getElementById('filterBox').value = '';
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterType').value = '';
+    loadTubes();
+}
+
+function exportTubes(format) {
+    const search = document.getElementById('searchTube').value;
+    const box = document.getElementById('filterBox').value;
+    const status = document.getElementById('filterStatus').value;
+    const type = document.getElementById('filterType').value;
+
+    let url = `/api/tubes/export?format=${format}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (box) url += `&box=${box}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (type) url += `&type=${encodeURIComponent(type)}`;
+
+    window.location.href = url;
+}
+
+function openAddTubeModal() {
+    document.getElementById('tubeModalTitle').textContent = 'Add Tube';
+    document.getElementById('tubeForm').reset();
+    document.getElementById('tubeId').value = '';
+}
+
+function editTube(id) {
+    const tube = allTubes.find(t => t.id === id);
+    if (!tube) return;
+    
+    document.getElementById('tubeModalTitle').textContent = 'Edit Tube';
+    document.getElementById('tubeId').value = tube.id;
+    document.getElementById('tubeBarcode').value = tube.barcode || '';
+    document.getElementById('tubeSample').value = tube.sample_id || '';
+    document.getElementById('tubeBox').value = tube.box_id || '';
+    document.getElementById('tubeRow').value = tube.position_row || '';
+    document.getElementById('tubeCol').value = tube.position_col || '';
+    document.getElementById('tubeConcentration').value = tube.concentration || '';
+    document.getElementById('tubeInitialVolume').value = tube.initial_volume || '';
+    document.getElementById('tubeCurrentVolume').value = tube.current_volume || '';
+    document.getElementById('tubeQuality').value = tube.quality || '';
+    document.getElementById('tubeSource').value = tube.source || '';
+    document.getElementById('tubeType').value = tube.tube_type || 'stock';
+    document.getElementById('tubeNotes').value = tube.notes || '';
+    
+    new bootstrap.Modal(document.getElementById('tubeModal')).show();
+}
+
+function saveTube() {
+    const id = document.getElementById('tubeId').value;
+    const data = {
+        barcode: document.getElementById('tubeBarcode').value,
+        sample_id: document.getElementById('tubeSample').value || null,
+        box_id: document.getElementById('tubeBox').value || null,
+        position_row: document.getElementById('tubeRow').value || null,
+        position_col: document.getElementById('tubeCol').value || null,
+        concentration: document.getElementById('tubeConcentration').value || null,
+        initial_volume: document.getElementById('tubeInitialVolume').value || null,
+        current_volume: document.getElementById('tubeCurrentVolume').value || null,
+        quality: document.getElementById('tubeQuality').value || null,
+        source: document.getElementById('tubeSource').value || null,
+        tube_type: document.getElementById('tubeType').value,
+        notes: document.getElementById('tubeNotes').value
+    };
+    
+    if (!data.barcode) {
+        alert('Barcode is required');
+        return;
+    }
+    
+    const url = id ? `/api/tubes/${id}` : '/api/tubes';
+    const method = id ? 'PUT' : 'POST';
+    
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('tubeModal')).hide();
+            loadTubes();
+        }
+    })
+    .catch(err => {
+        console.error('Error saving tube:', err);
+        alert('Error saving tube');
+    });
+}
+
+function deleteTube(id) {
+    if (!confirm('Delete this tube?')) return;
+    
+    fetch(`/api/tubes/${id}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                alert('Error: ' + result.error);
+            } else {
+                loadTubes();
+            }
+        })
+        .catch(err => {
+            console.error('Error deleting tube:', err);
+            alert('Error deleting tube');
+        });
+}
+
+function openUsageModal(tubeId, barcode) {
+    document.getElementById('usageForm').reset();
+    document.getElementById('usageTubeId').value = tubeId;
+    document.getElementById('usageTubeBarcode').value = barcode;
+    new bootstrap.Modal(document.getElementById('usageModal')).show();
+}
+
+function saveUsage() {
+    const data = {
+        tube_id: document.getElementById('usageTubeId').value,
+        user_name: document.getElementById('usageUser').value,
+        volume_taken: document.getElementById('usageVolume').value,
+        purpose: document.getElementById('usagePurpose').value,
+        notes: document.getElementById('usageNotes').value
+    };
+    
+    if (!data.user_name || !data.volume_taken) {
+        alert('User name and volume are required');
+        return;
+    }
+    
+    fetch('/api/usages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('usageModal')).hide();
+            loadTubes();
+        }
+    })
+    .catch(err => {
+        console.error('Error recording usage:', err);
+        alert('Error recording usage');
+    });
+}
+</script>
+{% endblock %}

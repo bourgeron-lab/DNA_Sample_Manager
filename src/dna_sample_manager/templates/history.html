@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}History - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-clock-history"></i> Usage History</h2>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body filter-section">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" id="searchHistory" 
+                               placeholder="Search by user or purpose...">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <input type="date" class="form-control" id="filterDateFrom" placeholder="From date">
+                </div>
+                <div class="col-md-3">
+                    <input type="date" class="form-control" id="filterDateTo" placeholder="To date">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+                        <i class="bi bi-x-circle"></i> Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Usage Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Usage Records</span>
+            <span class="badge bg-secondary" id="usageCount">0 records</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Date</th>
+                            <th>Tube</th>
+                            <th>User</th>
+                            <th>Volume (µL)</th>
+                            <th>Purpose</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTable">
+                        <tr>
+                            <td colspan="7" class="text-center">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Statistics -->
+    <div class="row g-4 mt-2">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-graph-up"></i> Usage by User
+                </div>
+                <div class="card-body">
+                    <canvas id="userChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-calendar3"></i> Usage Over Time
+                </div>
+                <div class="card-body">
+                    <canvas id="timeChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let allUsages = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadHistory();
+    
+    // Search listener
+    let searchTimeout;
+    document.getElementById('searchHistory').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(filterAndDisplayHistory, 300);
+    });
+    
+    // Date filter listeners
+    ['filterDateFrom', 'filterDateTo'].forEach(id => {
+        document.getElementById(id).addEventListener('change', filterAndDisplayHistory);
+    });
+});
+
+function loadHistory() {
+    fetch('/api/usages')
+        .then(response => response.json())
+        .then(data => {
+            allUsages = data || [];
+            filterAndDisplayHistory();
+            buildCharts();
+        })
+        .catch(err => {
+            console.error('Error loading history:', err);
+            document.getElementById('historyTable').innerHTML = 
+                '<tr><td colspan="7" class="text-center text-danger">Error loading history</td></tr>';
+        });
+}
+
+function filterAndDisplayHistory() {
+    const search = document.getElementById('searchHistory').value.toLowerCase();
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo = document.getElementById('filterDateTo').value;
+    
+    let filtered = allUsages.filter(usage => {
+        if (search) {
+            const searchMatch = (usage.user_name || '').toLowerCase().includes(search) ||
+                               (usage.purpose || '').toLowerCase().includes(search) ||
+                               (usage.tube_barcode || '').toLowerCase().includes(search);
+            if (!searchMatch) return false;
+        }
+        if (dateFrom && usage.date_out < dateFrom) return false;
+        if (dateTo && usage.date_out > dateTo) return false;
+        return true;
+    });
+    
+    displayHistory(filtered);
+}
+
+function displayHistory(usages) {
+    const tbody = document.getElementById('historyTable');
+    document.getElementById('usageCount').textContent = `${usages.length} records`;
+    
+    if (usages.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No usage records found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = usages.map(usage => `
+        <tr>
+            <td>${usage.id}</td>
+            <td>${usage.date_out ? new Date(usage.date_out).toLocaleDateString() : '-'}</td>
+            <td><code>${usage.tube_barcode || '-'}</code></td>
+            <td>${usage.user_name || '-'}</td>
+            <td>${usage.volume_taken ? usage.volume_taken + ' µL' : '-'}</td>
+            <td>${usage.purpose || '-'}</td>
+            <td><small class="text-muted">${usage.notes || '-'}</small></td>
+        </tr>
+    `).join('');
+}
+
+function resetFilters() {
+    document.getElementById('searchHistory').value = '';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    filterAndDisplayHistory();
+}
+
+function buildCharts() {
+    // Usage by user chart
+    const userCounts = {};
+    allUsages.forEach(u => {
+        const user = u.user_name || 'Unknown';
+        userCounts[user] = (userCounts[user] || 0) + 1;
+    });
+    
+    const topUsers = Object.entries(userCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    
+    if (topUsers.length > 0) {
+        const userCtx = document.getElementById('userChart').getContext('2d');
+        new Chart(userCtx, {
+            type: 'bar',
+            data: {
+                labels: topUsers.map(u => u[0]),
+                datasets: [{
+                    label: 'Usages',
+                    data: topUsers.map(u => u[1]),
+                    backgroundColor: '#667eea'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+    
+    // Usage over time chart
+    const dateCounts = {};
+    allUsages.forEach(u => {
+        if (u.date_out) {
+            const month = u.date_out.substring(0, 7); // YYYY-MM
+            dateCounts[month] = (dateCounts[month] || 0) + 1;
+        }
+    });
+    
+    const sortedDates = Object.entries(dateCounts).sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
+    
+    if (sortedDates.length > 0) {
+        const timeCtx = document.getElementById('timeChart').getContext('2d');
+        new Chart(timeCtx, {
+            type: 'line',
+            data: {
+                labels: sortedDates.map(d => d[0]),
+                datasets: [{
+                    label: 'Usages',
+                    data: sortedDates.map(d => d[1]),
+                    borderColor: '#11998e',
+                    backgroundColor: 'rgba(17, 153, 142, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

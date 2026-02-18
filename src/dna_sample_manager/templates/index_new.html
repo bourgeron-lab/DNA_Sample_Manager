@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+    
+    <!-- Statistics Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="stat-card primary">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value" id="stat-individuals">-</div>
+                        <div class="stat-label">Individuals</div>
+                    </div>
+                    <i class="bi bi-people stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card success">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value" id="stat-samples">-</div>
+                        <div class="stat-label">Samples</div>
+                    </div>
+                    <i class="bi bi-collection stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value" id="stat-tubes">-</div>
+                        <div class="stat-label">Tubes</div>
+                    </div>
+                    <i class="bi bi-droplet stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card warning">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-value" id="stat-boxes">-</div>
+                        <div class="stat-label">Boxes</div>
+                    </div>
+                    <i class="bi bi-box stat-icon"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row g-4">
+        <!-- Quick Actions -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <i class="bi bi-lightning"></i> Quick Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('individuals_page') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-person-plus"></i> Add Individual
+                        </a>
+                        <a href="{{ url_for('samples_page') }}" class="btn btn-outline-success">
+                            <i class="bi bi-plus-circle"></i> Add Sample
+                        </a>
+                        <a href="{{ url_for('tubes_page') }}" class="btn btn-outline-info">
+                            <i class="bi bi-droplet-half"></i> Manage Tubes
+                        </a>
+                        <a href="{{ url_for('boxes_page') }}" class="btn btn-outline-warning">
+                            <i class="bi bi-box-seam"></i> Manage Boxes
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Families Distribution -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <i class="bi bi-diagram-3"></i> Top Families
+                </div>
+                <div class="card-body">
+                    <canvas id="familyChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Projects Distribution -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <i class="bi bi-folder"></i> Top Projects
+                </div>
+                <div class="card-body">
+                    <canvas id="projectChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row g-4 mt-2">
+        <!-- Recent Individuals -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-people"></i> Recent Individuals</span>
+                    <a href="{{ url_for('individuals_page') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Family</th>
+                                    <th>Sex</th>
+                                    <th>Samples</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-individuals">
+                                <tr><td colspan="4" class="text-center">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Samples -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-collection"></i> Recent Samples</span>
+                    <a href="{{ url_for('samples_page') }}" class="btn btn-sm btn-outline-success">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Individual</th>
+                                    <th>Type</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-samples">
+                                <tr><td colspan="4" class="text-center">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats();
+    loadRecentData();
+});
+
+function loadStats() {
+    fetch('/api/stats')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('stat-individuals').textContent = data.individuals || 0;
+            document.getElementById('stat-samples').textContent = data.samples || 0;
+            document.getElementById('stat-tubes').textContent = data.tubes || 0;
+            document.getElementById('stat-boxes').textContent = data.boxes || 0;
+            
+            // Family chart
+            if (data.top_families && data.top_families.length > 0) {
+                const familyCtx = document.getElementById('familyChart').getContext('2d');
+                new Chart(familyCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.top_families.map(f => f.family_id || 'Unknown'),
+                        datasets: [{
+                            data: data.top_families.map(f => f.count),
+                            backgroundColor: ['#667eea', '#764ba2', '#11998e', '#38ef7d', '#4facfe']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { font: { size: 10 } }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Project chart
+            if (data.top_projects && data.top_projects.length > 0) {
+                const projectCtx = document.getElementById('projectChart').getContext('2d');
+                new Chart(projectCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.top_projects.map(p => p.project),
+                        datasets: [{
+                            label: 'Individuals',
+                            data: data.top_projects.map(p => p.count),
+                            backgroundColor: '#4facfe'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+        })
+        .catch(err => console.error('Error loading stats:', err));
+}
+
+function loadRecentData() {
+    // Load recent individuals
+    fetch('/api/individuals?limit=5')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('recent-individuals');
+            if (data.individuals && data.individuals.length > 0) {
+                tbody.innerHTML = data.individuals.map(ind => `
+                    <tr>
+                        <td><code>${ind.individual_id}</code></td>
+                        <td>${ind.family_id || '-'}</td>
+                        <td>${ind.sex === 1 ? '<i class="bi bi-gender-male text-primary"></i>' : 
+                              ind.sex === 2 ? '<i class="bi bi-gender-female text-danger"></i>' : '-'}</td>
+                        <td><span class="badge bg-secondary">${ind.sample_count || 0}</span></td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No individuals yet</td></tr>';
+            }
+        })
+        .catch(err => {
+            console.error('Error loading individuals:', err);
+            document.getElementById('recent-individuals').innerHTML = 
+                '<tr><td colspan="4" class="text-center text-danger">Error loading data</td></tr>';
+        });
+    
+    // Load recent samples
+    fetch('/api/samples?limit=5')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('recent-samples');
+            if (data.samples && data.samples.length > 0) {
+                tbody.innerHTML = data.samples.map(s => `
+                    <tr>
+                        <td><code>${s.sample_code}</code></td>
+                        <td>${s.individual_id || '-'}</td>
+                        <td>${s.sample_type || '-'}</td>
+                        <td>${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}</td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No samples yet</td></tr>';
+            }
+        })
+        .catch(err => {
+            console.error('Error loading samples:', err);
+            document.getElementById('recent-samples').innerHTML = 
+                '<tr><td colspan="4" class="text-center text-danger">Error loading data</td></tr>';
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+
+{% block title %}Sujets - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-people text-primary"></i> Gestion des Sujets</h2>
+    <div>
+        <span class="badge bg-secondary me-2" id="totalCount">0 sujets</span>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#sujetModal" onclick="openNewSujetModal()">
+            <i class="bi bi-plus-lg"></i> Nouveau sujet
+        </button>
+    </div>
+</div>
+
+<!-- Filtres -->
+<div class="filter-section">
+    <div class="row g-3">
+        <div class="col-md-10">
+            <div class="search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" class="form-control" id="searchInput" placeholder="Rechercher par ID, famille, projet...">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-outline-secondary w-100" onclick="loadSujets()">
+                <i class="bi bi-arrow-clockwise"></i> Actualiser
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Tableau -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID Individu</th>
+                        <th>Aliases</th>
+                        <th>Famille</th>
+                        <th>Sexe</th>
+                        <th>Projets</th>
+                        <th>Tubes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="sujetsTable">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status"></div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <!-- Pagination -->
+    <div class="card-footer">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <small class="text-muted">Page <span id="currentPageDisplay">1</span> sur <span id="totalPagesDisplay">1</span></small>
+            </div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0" id="pagination">
+                </ul>
+            </nav>
+            <div>
+                <select class="form-select form-select-sm" id="perPageSelect" style="width: auto;">
+                    <option value="25" selected>25 / page</option>
+                    <option value="50">50 / page</option>
+                    <option value="100">100 / page</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sujet -->
+<div class="modal fade" id="sujetModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sujetModalTitle">Nouveau Sujet</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sujetForm">
+                    <input type="hidden" id="sujetId">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">ID Individu <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="individual_id" required placeholder="Ex: 1013.1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Aliases</label>
+                            <input type="text" class="form-control" id="aliases" placeholder="Identifiants alternatifs">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Famille</label>
+                            <input type="text" class="form-control" id="family_id" placeholder="Ex: AIMS_f1013">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Sexe</label>
+                            <select class="form-select" id="sex">
+                                <option value="">Non spécifié</option>
+                                <option value="1">Masculin</option>
+                                <option value="2">Féminin</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Phénotype</label>
+                            <input type="text" class="form-control" id="phenotype" placeholder="Ex: -9">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Autres codes famille</label>
+                            <input type="text" class="form-control" id="other_family_codes">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Projets <small class="text-muted">(séparés par virgule)</small></label>
+                            <input type="text" class="form-control" id="projects" placeholder="Ex: euaims, gBasis">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            <textarea class="form-control" id="notes" rows="2"></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="saveSujet()">
+                    <i class="bi bi-check-lg"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Détails -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Détails du Sujet</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailsContent">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Sample -->
+<div class="modal fade" id="addSampleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajouter un échantillon</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addSampleForm">
+                    <input type="hidden" id="sampleSujetId">
+                    <div class="mb-3">
+                        <label class="form-label">Code échantillon <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="newSampleId" required placeholder="Ex: C000A0M">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="newSampleType">
+                            <option value="">-- Sélectionner --</option>
+                            <option value="DNA">DNA</option>
+                            <option value="RNA">RNA</option>
+                            <option value="Blood">Sang</option>
+                            <option value="Saliva">Salive</option>
+                            <option value="Tissue">Tissu</option>
+                            <option value="Other">Autre</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="newSampleNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="addSampleToSujet()">
+                    <i class="bi bi-plus-lg"></i> Ajouter
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// XSS escaping helper
+function esc(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+}
+
+let sujetsData = [];
+let currentPage = 1;
+let totalPages = 1;
+let perPage = 25;
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadSujets();
+    
+    // Recherche avec délai
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            currentPage = 1;
+            loadSujets();
+        }, 300);
+    });
+    
+    document.getElementById('perPageSelect').addEventListener('change', function() {
+        perPage = parseInt(this.value);
+        currentPage = 1;
+        loadSujets();
+    });
+});
+
+async function loadSujets() {
+    const search = document.getElementById('searchInput').value;
+    
+    const params = new URLSearchParams();
+    params.append('page', currentPage);
+    params.append('per_page', perPage);
+    if (search) params.append('search', search);
+    
+    try {
+        const response = await fetch('/api/sujets?' + params.toString());
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        
+        sujetsData = data.sujets || [];
+        totalPages = data.pages || 1;
+        
+        document.getElementById('totalCount').textContent = `${data.total} sujets`;
+        document.getElementById('currentPageDisplay').textContent = currentPage;
+        document.getElementById('totalPagesDisplay').textContent = totalPages;
+        
+        renderTable();
+        renderPagination();
+    } catch (error) {
+        console.error('Erreur:', error);
+        document.getElementById('sujetsTable').innerHTML = 
+            '<tr><td colspan="6" class="text-center py-4 text-danger">Erreur lors du chargement des données</td></tr>';
+    }
+}
+
+function renderTable() {
+    const tbody = document.getElementById('sujetsTable');
+    
+    if (sujetsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Aucun sujet trouvé</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = sujetsData.map(s => `
+        <tr>
+            <td><strong>${esc(s.individual_id)}</strong></td>
+            <td><small class="text-muted">${esc(s.aliases) || '-'}</small></td>
+            <td>${esc(s.family_id) || '-'}</td>
+            <td><span class="badge ${s.sex === 1 ? 'bg-primary' : s.sex === 2 ? 'bg-danger' : 'bg-secondary'}">${esc(s.sex_display)}</span></td>
+            <td><small>${s.projects ? esc(s.projects.length > 25 ? s.projects.substring(0, 25) + '...' : s.projects) : '-'}</small></td>
+            <td class="text-center"><span class="badge bg-info">${s.sample_count}</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline-info btn-action" onclick="showDetails(${s.id})" title="Détails">
+                    <i class="bi bi-eye"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-success btn-action" onclick="openAddSampleModal(${s.id})" title="Ajouter échantillon">
+                    <i class="bi bi-plus-circle"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary btn-action" onclick="editSujet(${s.id})" title="Modifier">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteSujet(${s.id})" title="Supprimer">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderPagination() {
+    const pagination = document.getElementById('pagination');
+    let html = '';
+    
+    // Bouton précédent
+    html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="goToPage(${currentPage - 1}); return false;">«</a>
+    </li>`;
+    
+    // Pages
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+    
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="goToPage(1); return false;">1</a></li>`;
+        if (startPage > 2) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i}</a>
+        </li>`;
+    }
+    
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="goToPage(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+    
+    // Bouton suivant
+    html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="goToPage(${currentPage + 1}); return false;">»</a>
+    </li>`;
+    
+    pagination.innerHTML = html;
+}
+
+function goToPage(page) {
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    loadSujets();
+}
+
+function openNewSujetModal() {
+    document.getElementById('sujetModalTitle').textContent = 'Nouveau Sujet';
+    document.getElementById('sujetForm').reset();
+    document.getElementById('sujetId').value = '';
+}
+
+async function editSujet(id) {
+    const sujet = sujetsData.find(s => s.id === id);
+    if (!sujet) return;
+    
+    document.getElementById('sujetModalTitle').textContent = 'Modifier le Sujet';
+    document.getElementById('sujetId').value = id;
+    document.getElementById('individual_id').value = sujet.individual_id || '';
+    document.getElementById('aliases').value = sujet.aliases || '';
+    document.getElementById('family_id').value = sujet.family_id || '';
+    document.getElementById('sex').value = sujet.sex || '';
+    document.getElementById('phenotype').value = sujet.phenotype || '';
+    document.getElementById('projects').value = sujet.projects || '';
+    document.getElementById('other_family_codes').value = sujet.other_family_codes || '';
+    document.getElementById('notes').value = sujet.notes || '';
+    
+    new bootstrap.Modal(document.getElementById('sujetModal')).show();
+}
+
+async function saveSujet() {
+    const id = document.getElementById('sujetId').value;
+    const data = {
+        individual_id: document.getElementById('individual_id').value || null,
+        aliases: document.getElementById('aliases').value || null,
+        family_id: document.getElementById('family_id').value || null,
+        sex: document.getElementById('sex').value ? parseInt(document.getElementById('sex').value) : null,
+        phenotype: document.getElementById('phenotype').value || null,
+        projects: document.getElementById('projects').value || null,
+        other_family_codes: document.getElementById('other_family_codes').value || null,
+        notes: document.getElementById('notes').value || null
+    };
+    
+    const url = id ? `/api/sujets/${id}` : '/api/sujets';
+    const method = id ? 'PUT' : 'POST';
+    
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('sujetModal')).hide();
+            loadSujets();
+        } else {
+            const error = await response.json();
+            alert(error.error || 'Erreur lors de l\'enregistrement');
+        }
+    } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    }
+}
+
+async function deleteSujet(id) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce sujet ?')) return;
+    
+    try {
+        const response = await fetch(`/api/sujets/${id}`, { method: 'DELETE' });
+        const result = await response.json();
+        
+        if (response.ok) {
+            loadSujets();
+        } else {
+            alert(result.error || 'Erreur lors de la suppression');
+        }
+    } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    }
+}
+
+async function showDetails(id) {
+    // Show loading state immediately
+    document.getElementById('detailsContent').innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Chargement des détails...</p>
+        </div>
+    `;
+    new bootstrap.Modal(document.getElementById('detailsModal')).show();
+    
+    try {
+        // Fetch full details from API (includes samples)
+        const response = await fetch(`/api/sujets/${id}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const sujet = await response.json();
+        
+        let samplesTable = '<p class="text-muted">Aucun échantillon</p>';
+        if (sujet.samples && sujet.samples.length > 0) {
+            samplesTable = `
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Type</th>
+                        <th>Barcode</th>
+                        <th>Frigo</th>
+                        <th>Boîte</th>
+                        <th>Position</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sujet.samples.map(s => {
+                        if (s.tubes && s.tubes.length > 0) {
+                            return s.tubes.map((t, idx) => `
+                                <tr>
+                                    ${idx === 0 ? `<td rowspan="${s.tubes.length}"><code>${esc(s.sample_id)}</code></td><td rowspan="${s.tubes.length}">${esc(s.sample_type) || '-'}</td>` : ''}
+                                    <td><code>${esc(t.barcode)}</code></td>
+                                    <td>${esc(t.freezer) || '-'}</td>
+                                    <td>${esc(t.box_name) || '-'}</td>
+                                    <td>${esc(t.position_display) || '-'}</td>
+                                </tr>
+                            `).join('');
+                        } else {
+                            return `
+                                <tr>
+                                    <td><code>${esc(s.sample_id)}</code></td>
+                                    <td>${esc(s.sample_type) || '-'}</td>
+                                    <td colspan="4" class="text-muted">Aucun tube</td>
+                                </tr>
+                            `;
+                        }
+                    }).join('')}
+                </tbody>
+            </table>`;
+        }
+        
+        document.getElementById('detailsContent').innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6><i class="bi bi-person-badge"></i> Identification</h6>
+                    <table class="table table-sm">
+                        <tr><td width="40%">ID Individu</td><td><strong>${esc(sujet.individual_id)}</strong></td></tr>
+                        <tr><td>Aliases</td><td>${esc(sujet.aliases) || '-'}</td></tr>
+                        <tr><td>Famille</td><td>${esc(sujet.family_id) || '-'}</td></tr>
+                        <tr><td>Autres codes famille</td><td>${esc(sujet.other_family_codes) || '-'}</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h6><i class="bi bi-info-circle"></i> Informations</h6>
+                    <table class="table table-sm">
+                        <tr><td width="40%">Sexe</td><td><span class="badge ${sujet.sex === 1 ? 'bg-primary' : sujet.sex === 2 ? 'bg-danger' : 'bg-secondary'}">${esc(sujet.sex_display)}</span></td></tr>
+                        <tr><td>Phénotype</td><td>${esc(sujet.phenotype) || '-'}</td></tr>
+                        <tr><td>Créé le</td><td>${sujet.created_at ? new Date(sujet.created_at).toLocaleDateString('fr-FR') : '-'}</td></tr>
+                        <tr><td>Modifié le</td><td>${sujet.updated_at ? new Date(sujet.updated_at).toLocaleDateString('fr-FR') : '-'}</td></tr>
+                    </table>
+                </div>
+                <div class="col-12 mt-3">
+                    <h6><i class="bi bi-folder"></i> Projets</h6>
+                    <p>${sujet.projects ? sujet.projects.split(',').map(p => `<span class="badge bg-secondary me-1">${esc(p.trim())}</span>`).join('') : '<span class="text-muted">Aucun</span>'}</p>
+                </div>
+                <div class="col-12 mt-3">
+                    <h6><i class="bi bi-droplet"></i> Échantillons <span class="badge bg-primary">${sujet.samples ? sujet.samples.length : 0}</span></h6>
+                    ${samplesTable}
+                </div>
+                ${sujet.notes ? `<div class="col-12 mt-3"><div class="alert alert-secondary"><strong>Notes:</strong> ${esc(sujet.notes)}</div></div>` : ''}
+            </div>
+        `;
+    } catch (error) {
+        console.error('Erreur:', error);
+        document.getElementById('detailsContent').innerHTML = `
+            <div class="text-center py-4 text-danger">
+                <i class="bi bi-exclamation-triangle"></i> Erreur lors du chargement des détails
+            </div>
+        `;
+    }
+}
+
+function openAddSampleModal(sujetId) {
+    document.getElementById('sampleSujetId').value = sujetId;
+    document.getElementById('addSampleForm').reset();
+    new bootstrap.Modal(document.getElementById('addSampleModal')).show();
+}
+
+async function addSampleToSujet() {
+    const sujetId = document.getElementById('sampleSujetId').value;
+    const data = {
+        sample_id: document.getElementById('newSampleId').value,
+        sample_type: document.getElementById('newSampleType').value || null,
+        notes: document.getElementById('newSampleNotes').value || null
+    };
+    
+    if (!data.sample_id) {
+        alert('Le code échantillon est requis');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/sujets/${sujetId}/samples`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('addSampleModal')).hide();
+            loadSujets();
+        } else {
+            alert(result.error || 'Erreur lors de l\'ajout de l\'échantillon');
+        }
+    } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    }
+}
+</script>
+{% endblock %}

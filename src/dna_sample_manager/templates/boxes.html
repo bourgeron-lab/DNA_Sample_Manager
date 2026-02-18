@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+
+{% block title %}Boxes - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-box"></i> Box Management</h2>
+        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#boxModal" onclick="openAddBoxModal()">
+            <i class="bi bi-plus-circle"></i> Add Box
+        </button>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body filter-section">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" id="searchBox" 
+                               placeholder="Search box name...">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filterFreezer">
+                        <option value="">All Freezers</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filterBoxType">
+                        <option value="">All Types</option>
+                        <option value="stock">Stock</option>
+                        <option value="working">Working</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+                        <i class="bi bi-x-circle"></i> Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Boxes Grid -->
+    <div class="row g-4" id="boxesGrid">
+        <div class="col-12 text-center">Loading...</div>
+    </div>
+</div>
+
+<!-- Box Modal -->
+<div class="modal fade" id="boxModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="boxModalTitle">Add Box</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="boxForm">
+                    <input type="hidden" id="boxId">
+                    <div class="mb-3">
+                        <label class="form-label">Box Name *</label>
+                        <input type="text" class="form-control" id="boxName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Freezer</label>
+                        <input type="text" class="form-control" id="boxFreezer" placeholder="e.g., -80°C Freezer 1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Box Type</label>
+                        <select class="form-select" id="boxType">
+                            <option value="stock">Stock</option>
+                            <option value="working">Working</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="boxNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="saveBox()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Box Details Modal -->
+<div class="modal fade" id="boxDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Box Contents</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="boxDetailsContent">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// XSS escaping helper
+function esc(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+}
+
+let allBoxes = [];
+let freezers = new Set();
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadBoxes();
+    
+    // Search listener
+    let searchTimeout;
+    document.getElementById('searchBox').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(filterAndDisplayBoxes, 300);
+    });
+    
+    // Filter listeners
+    ['filterFreezer', 'filterBoxType'].forEach(id => {
+        document.getElementById(id).addEventListener('change', filterAndDisplayBoxes);
+    });
+});
+
+function loadBoxes() {
+    fetch('/api/boxes')
+        .then(response => response.json())
+        .then(data => {
+            allBoxes = data || [];
+            
+            // Build freezer list
+            freezers.clear();
+            allBoxes.forEach(box => {
+                if (box.freezer) freezers.add(box.freezer);
+            });
+            
+            const freezerSelect = document.getElementById('filterFreezer');
+            freezerSelect.innerHTML = '<option value="">All Freezers</option>';
+            Array.from(freezers).sort().forEach(f => {
+                const option = document.createElement('option');
+                option.value = f;
+                option.textContent = f;
+                freezerSelect.appendChild(option);
+            });
+            
+            filterAndDisplayBoxes();
+        })
+        .catch(err => {
+            console.error('Error loading boxes:', err);
+            document.getElementById('boxesGrid').innerHTML = 
+                '<div class="col-12 text-center text-danger">Error loading boxes</div>';
+        });
+}
+
+function filterAndDisplayBoxes() {
+    const search = document.getElementById('searchBox').value.toLowerCase();
+    const freezer = document.getElementById('filterFreezer').value;
+    const type = document.getElementById('filterBoxType').value;
+    
+    let filtered = allBoxes.filter(box => {
+        if (search && !(box.name || '').toLowerCase().includes(search)) return false;
+        if (freezer && box.freezer !== freezer) return false;
+        if (type && box.box_type !== type) return false;
+        return true;
+    });
+    
+    displayBoxes(filtered);
+}
+
+function displayBoxes(boxes) {
+    const grid = document.getElementById('boxesGrid');
+    
+    if (boxes.length === 0) {
+        grid.innerHTML = '<div class="col-12 text-center text-muted">No boxes found</div>';
+        return;
+    }
+    
+    grid.innerHTML = boxes.map(box => {
+        const typeColor = (box.box_type === 'stock' || box.box_type === 'working') ? (box.box_type === 'stock' ? 'primary' : 'warning') : 'info';
+        // Parse box dimensions from box_type (e.g., '9 x 9') or default to 9x9
+        let boxRows = 9, boxCols = 9;
+        const dimMatch = (box.box_type || '').match(/(\d+)\s*x\s*(\d+)/);
+        if (dimMatch) { boxRows = parseInt(dimMatch[1]); boxCols = parseInt(dimMatch[2]); }
+        const capacity = boxRows * boxCols;
+        const fillPercent = Math.min(100, (box.tube_count / capacity) * 100);
+        
+        return `
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-box-seam"></i> ${esc(box.name) || 'Box ' + box.id}</span>
+                    <span class="badge bg-${typeColor}">${esc(box.box_type) || 'stock'}</span>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2"><small class="text-muted">Freezer:</small> ${esc(box.freezer) || '-'}</p>
+                    <p class="mb-2">
+                        <small class="text-muted">Tubes:</small> 
+                        <strong>${box.tube_count}</strong> / ${capacity}
+                    </p>
+                    <div class="progress mb-3" style="height: 8px;">
+                        <div class="progress-bar bg-${fillPercent > 80 ? 'danger' : fillPercent > 50 ? 'warning' : 'success'}" 
+                             style="width: ${fillPercent}%"></div>
+                    </div>
+                    ${box.notes ? `<p class="small text-muted mb-0">${esc(box.notes)}</p>` : ''}
+                </div>
+                <div class="card-footer bg-transparent">
+                    <button class="btn btn-sm btn-outline-info" onclick="viewBoxContents(${box.id})">
+                        <i class="bi bi-eye"></i> View
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="editBox(${box.id})">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteBox(${box.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `}).join('');
+}
+
+function resetFilters() {
+    document.getElementById('searchBox').value = '';
+    document.getElementById('filterFreezer').value = '';
+    document.getElementById('filterBoxType').value = '';
+    filterAndDisplayBoxes();
+}
+
+function openAddBoxModal() {
+    document.getElementById('boxModalTitle').textContent = 'Add Box';
+    document.getElementById('boxForm').reset();
+    document.getElementById('boxId').value = '';
+}
+
+function editBox(id) {
+    const box = allBoxes.find(b => b.id === id);
+    if (!box) return;
+    
+    document.getElementById('boxModalTitle').textContent = 'Edit Box';
+    document.getElementById('boxId').value = box.id;
+    document.getElementById('boxName').value = box.name || '';
+    document.getElementById('boxFreezer').value = box.freezer || '';
+    document.getElementById('boxType').value = box.box_type || 'stock';
+    document.getElementById('boxNotes').value = box.notes || '';
+    
+    new bootstrap.Modal(document.getElementById('boxModal')).show();
+}
+
+function saveBox() {
+    const id = document.getElementById('boxId').value;
+    const data = {
+        name: document.getElementById('boxName').value,
+        freezer: document.getElementById('boxFreezer').value,
+        box_type: document.getElementById('boxType').value,
+        notes: document.getElementById('boxNotes').value
+    };
+    
+    if (!data.name) {
+        alert('Box name is required');
+        return;
+    }
+    
+    const url = id ? `/api/boxes/${id}` : '/api/boxes';
+    const method = id ? 'PUT' : 'POST';
+    
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('boxModal')).hide();
+            loadBoxes();
+        }
+    })
+    .catch(err => {
+        console.error('Error saving box:', err);
+        alert('Error saving box');
+    });
+}
+
+function deleteBox(id) {
+    if (!confirm('Delete this box?')) return;
+    
+    fetch(`/api/boxes/${id}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                alert('Error: ' + result.error);
+            } else {
+                loadBoxes();
+            }
+        })
+        .catch(err => {
+            console.error('Error deleting box:', err);
+            alert('Error deleting box');
+        });
+}
+
+function viewBoxContents(boxId) {
+    fetch(`/api/tubes?box=${boxId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(tubes => {
+            const box = allBoxes.find(b => b.id === boxId);
+            if (!box) {
+                console.error('Box not found:', boxId);
+                alert('Box not found');
+                return;
+            }
+            
+            // Parse box dimensions from box_type (e.g., '9 x 9') or default to 9x9
+            let numRows = 9, numCols = 9;
+            const dimMatch = (box.box_type || '').match(/(\d+)\s*x\s*(\d+)/);
+            if (dimMatch) { numRows = parseInt(dimMatch[1]); numCols = parseInt(dimMatch[2]); }
+            
+            // Create dynamic grid
+            let grid = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
+            let unplacedTubes = [];
+            tubes.forEach(tube => {
+                if (tube.position_row && tube.position_col && 
+                    tube.position_row >= 1 && tube.position_row <= numRows &&
+                    tube.position_col >= 1 && tube.position_col <= numCols) {
+                    grid[tube.position_row - 1][tube.position_col - 1] = tube;
+                } else {
+                    unplacedTubes.push(tube);
+                }
+            });
+            
+            // Build column headers
+            let colHeaders = [];
+            for (let c = 1; c <= numCols; c++) colHeaders.push(c);
+            
+            let html = `
+                <h6 class="mb-3">${esc(box.name) || 'Box ' + boxId} <small class="text-muted">(${numRows} x ${numCols} — ${esc(box.freezer) || ''})</small></h6>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                ${colHeaders.map(c => `<th class="text-center">${c}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            for (let row = 0; row < numRows; row++) {
+                const rowLetter = String.fromCharCode(65 + row);
+                html += `<tr><td class="text-center fw-bold">${rowLetter}</td>`;
+                
+                for (let col = 0; col < numCols; col++) {
+                    const tube = grid[row][col];
+                    if (tube) {
+                        const statusClass = {
+                            'Available': 'success',
+                            'Low': 'warning',
+                            'Critical': 'danger',
+                            'Empty': 'secondary'
+                        }[tube.status] || 'primary';
+                        
+                        html += `
+                            <td class="text-center" style="cursor: pointer;"
+                                title="${esc(tube.barcode)}\n${esc(tube.sample_code) || ''}"
+                                onclick="alert('Barcode: ${esc(tube.barcode)}\\nSample: ${esc(tube.sample_code) || '-'}\\nVolume: ${tube.current_volume || '-'} µL')">
+                                <span class="badge bg-${statusClass}" style="font-size: 0.7rem;">●</span>
+                            </td>
+                        `;
+                    } else {
+                        html += '<td class="text-center text-muted">○</td>';
+                    }
+                }
+                html += '</tr>';
+            }
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <span class="badge bg-success me-2">● Available</span>
+                    <span class="badge bg-warning me-2">● Low</span>
+                    <span class="badge bg-danger me-2">● Critical</span>
+                    <span class="badge bg-secondary me-2">● Empty</span>
+                    <span class="text-muted ms-2">○ No tube</span>
+                    <span class="ms-3 text-muted">Total: ${tubes.length} tubes</span>
+                </div>
+            `;
+            
+            if (unplacedTubes.length > 0) {
+                html += `<div class="mt-3"><h6 class="text-warning">Tubes sans position valide (${unplacedTubes.length}):</h6><ul class="list-unstyled">`;
+                unplacedTubes.slice(0, 20).forEach(t => {
+                    html += `<li><code>${esc(t.barcode)}</code> — ${esc(t.sample_code) || '-'} (pos: ${t.position_row || '?'},${t.position_col || '?'})</li>`;
+                });
+                if (unplacedTubes.length > 20) html += `<li class="text-muted">... et ${unplacedTubes.length - 20} autres</li>`;
+                html += `</ul></div>`;
+            }
+            
+            document.getElementById('boxDetailsContent').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('boxDetailsModal')).show();
+        })
+        .catch(err => {
+            console.error('Error loading box contents:', err);
+            alert('Error loading box contents');
+        });
+}
+</script>
+{% endblock %}

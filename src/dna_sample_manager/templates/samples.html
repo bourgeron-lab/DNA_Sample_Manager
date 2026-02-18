@@ -1,0 +1,445 @@
+{% extends "base.html" %}
+
+{% block title %}Samples - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-collection"></i> Sample Management</h2>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#sampleModal" onclick="openAddSampleModal()">
+            <i class="bi bi-plus-circle"></i> Add Sample
+        </button>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body filter-section">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" class="form-control" id="searchSample" 
+                               placeholder="Search by code or individual...">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterType">
+                        <option value="">All Types</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterIndividual">
+                        <option value="">All Individuals</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select class="form-select" id="filterHasTube">
+                        <option value="">All Tube Status</option>
+                        <option value="yes">With Tube</option>
+                        <option value="no">Without Tube</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+                        <i class="bi bi-x-circle"></i> Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Samples Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Samples List</span>
+            <span class="badge bg-primary" id="sampleCount">0 samples</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Sample Code</th>
+                            <th>Individual</th>
+                            <th>Type</th>
+                            <th>Tube</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="samplesTable">
+                        <tr>
+                            <td colspan="7" class="text-center">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0" id="pagination"></ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<!-- Sample Modal -->
+<div class="modal fade" id="sampleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sampleModalTitle">Add Sample</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sampleForm">
+                    <input type="hidden" id="sampleId">
+                    <div class="mb-3">
+                        <label class="form-label">Sample Code *</label>
+                        <input type="text" class="form-control" id="sampleCode" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Individual</label>
+                        <select class="form-select" id="sampleIndividual">
+                            <option value="">-- Select Individual --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sample Type</label>
+                        <select class="form-select" id="sampleType">
+                            <option value="">-- Select Type --</option>
+                            <option value="DNA">DNA</option>
+                            <option value="RNA">RNA</option>
+                            <option value="Blood">Blood</option>
+                            <option value="Saliva">Saliva</option>
+                            <option value="Tissue">Tissue</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="sampleNotes" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveSample()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sample Details Modal -->
+<div class="modal fade" id="sampleDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Sample Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="sampleDetailsContent">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+const perPage = 20;
+let allSamples = [];
+let individuals = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadFilters();
+    loadSamples();
+    
+    // Search listener with debounce
+    let searchTimeout;
+    document.getElementById('searchSample').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            currentPage = 1;
+            loadSamples();
+        }, 300);
+    });
+    
+    // Filter listeners
+    ['filterType', 'filterIndividual', 'filterHasTube'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+            currentPage = 1;
+            loadSamples();
+        });
+    });
+});
+
+function loadFilters() {
+    // Load individuals for filter
+    fetch('/api/individuals?limit=1000')
+        .then(response => response.json())
+        .then(data => {
+            individuals = data.individuals || [];
+            const select = document.getElementById('filterIndividual');
+            const modalSelect = document.getElementById('sampleIndividual');
+            
+            individuals.forEach(ind => {
+                const option = document.createElement('option');
+                option.value = ind.id;
+                option.textContent = `${ind.individual_id}${ind.family_id ? ' (' + ind.family_id + ')' : ''}`;
+                select.appendChild(option.cloneNode(true));
+                modalSelect.appendChild(option);
+            });
+        })
+        .catch(err => console.error('Error loading individuals:', err));
+    
+    // Load sample types
+    fetch('/api/samples/types')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('filterType');
+            (data.types || []).forEach(type => {
+                if (type) {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    select.appendChild(option);
+                }
+            });
+        })
+        .catch(err => console.error('Error loading types:', err));
+}
+
+function loadSamples() {
+    const search = document.getElementById('searchSample').value;
+    const type = document.getElementById('filterType').value;
+    const individual = document.getElementById('filterIndividual').value;
+    const hasTube = document.getElementById('filterHasTube').value;
+    
+    let url = `/api/samples?page=${currentPage}&per_page=${perPage}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (type) url += `&type=${encodeURIComponent(type)}`;
+    if (individual) url += `&individual_id=${individual}`;
+    if (hasTube) url += `&has_tube=${hasTube}`;
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            allSamples = data.samples || [];
+            displaySamples();
+            document.getElementById('sampleCount').textContent = `${data.total || 0} samples`;
+            renderPagination(data.total || 0, data.pages || 1);
+        })
+        .catch(err => {
+            console.error('Error loading samples:', err);
+            document.getElementById('samplesTable').innerHTML = 
+                '<tr><td colspan="7" class="text-center text-danger">Error loading samples</td></tr>';
+        });
+}
+
+function displaySamples() {
+    const tbody = document.getElementById('samplesTable');
+    
+    if (allSamples.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No samples found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = allSamples.map(sample => `
+        <tr>
+            <td>${sample.id}</td>
+            <td><code style="font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-weight: 600;">${sample.sample_code}</code></td>
+            <td>${sample.individual_id || '<span class="text-muted">-</span>'}</td>
+            <td>${sample.sample_type ? `<span class="badge bg-info">${sample.sample_type}</span>` : '-'}</td>
+            <td>${sample.tube_id ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+            <td>${sample.created_at ? new Date(sample.created_at).toLocaleDateString() : '-'}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-info btn-action" onclick="viewSampleDetails(${sample.id})" title="View Details">
+                    <i class="bi bi-eye"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary btn-action" onclick="editSample(${sample.id})" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteSample(${sample.id})" title="Delete">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderPagination(total, pages) {
+    const pagination = document.getElementById('pagination');
+    
+    if (pages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Previous button
+    html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="goToPage(${currentPage - 1})">Previous</a>
+    </li>`;
+    
+    // Page numbers
+    for (let i = 1; i <= Math.min(pages, 5); i++) {
+        html += `<li class="page-item ${currentPage === i ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${i})">${i}</a>
+        </li>`;
+    }
+    
+    if (pages > 5) {
+        html += '<li class="page-item disabled"><a class="page-link">...</a></li>';
+        html += `<li class="page-item ${currentPage === pages ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${pages})">${pages}</a>
+        </li>`;
+    }
+    
+    // Next button
+    html += `<li class="page-item ${currentPage === pages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="goToPage(${currentPage + 1})">Next</a>
+    </li>`;
+    
+    pagination.innerHTML = html;
+}
+
+function goToPage(page) {
+    currentPage = page;
+    loadSamples();
+}
+
+function resetFilters() {
+    document.getElementById('searchSample').value = '';
+    document.getElementById('filterType').value = '';
+    document.getElementById('filterIndividual').value = '';
+    document.getElementById('filterHasTube').value = '';
+    currentPage = 1;
+    loadSamples();
+}
+
+function openAddSampleModal() {
+    document.getElementById('sampleModalTitle').textContent = 'Add Sample';
+    document.getElementById('sampleForm').reset();
+    document.getElementById('sampleId').value = '';
+}
+
+function editSample(id) {
+    const sample = allSamples.find(s => s.id === id);
+    if (!sample) return;
+    
+    document.getElementById('sampleModalTitle').textContent = 'Edit Sample';
+    document.getElementById('sampleId').value = sample.id;
+    document.getElementById('sampleCode').value = sample.sample_code || '';
+    document.getElementById('sampleIndividual').value = sample.individual_db_id || '';
+    document.getElementById('sampleType').value = sample.sample_type || '';
+    document.getElementById('sampleNotes').value = sample.notes || '';
+    
+    new bootstrap.Modal(document.getElementById('sampleModal')).show();
+}
+
+function saveSample() {
+    const id = document.getElementById('sampleId').value;
+    const data = {
+        sample_code: document.getElementById('sampleCode').value,
+        individual_id: document.getElementById('sampleIndividual').value || null,
+        sample_type: document.getElementById('sampleType').value,
+        notes: document.getElementById('sampleNotes').value
+    };
+    
+    if (!data.sample_code) {
+        alert('Sample code is required');
+        return;
+    }
+    
+    const url = id ? `/api/samples/${id}` : '/api/samples';
+    const method = id ? 'PUT' : 'POST';
+    
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.error) {
+            alert('Error: ' + result.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('sampleModal')).hide();
+            loadSamples();
+        }
+    })
+    .catch(err => {
+        console.error('Error saving sample:', err);
+        alert('Error saving sample');
+    });
+}
+
+function deleteSample(id) {
+    if (!confirm('Delete this sample?')) return;
+    
+    fetch(`/api/samples/${id}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(result => {
+            if (result.error) {
+                alert('Error: ' + result.error);
+            } else {
+                loadSamples();
+            }
+        })
+        .catch(err => {
+            console.error('Error deleting sample:', err);
+            alert('Error deleting sample');
+        });
+}
+
+function viewSampleDetails(id) {
+    fetch(`/api/samples/${id}`)
+        .then(response => response.json())
+        .then(sample => {
+            document.getElementById('sampleDetailsContent').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Sample Information</h6>
+                        <table class="table table-sm">
+                            <tr><th>ID</th><td>${sample.id}</td></tr>
+                            <tr><th>Code</th><td><code>${sample.sample_code}</code></td></tr>
+                            <tr><th>Type</th><td>${sample.sample_type || '-'}</td></tr>
+                            <tr><th>Individual</th><td>${sample.individual_id || '-'}</td></tr>
+                            <tr><th>Created</th><td>${sample.created_at ? new Date(sample.created_at).toLocaleString() : '-'}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Tube Association</h6>
+                        ${sample.tube ? `
+                            <table class="table table-sm">
+                                <tr><th>Tube ID</th><td>${sample.tube.id}</td></tr>
+                                <tr><th>Position</th><td>${sample.tube.position || '-'}</td></tr>
+                                <tr><th>Concentration</th><td>${sample.tube.concentration || '-'}</td></tr>
+                                <tr><th>Volume</th><td>${sample.tube.volume || '-'}</td></tr>
+                            </table>
+                        ` : '<p class="text-muted">No tube assigned</p>'}
+                    </div>
+                </div>
+                ${sample.notes ? `
+                    <div class="mt-3">
+                        <h6>Notes</h6>
+                        <p>${sample.notes}</p>
+                    </div>
+                ` : ''}
+            `;
+            new bootstrap.Modal(document.getElementById('sampleDetailsModal')).show();
+        })
+        .catch(err => {
+            console.error('Error loading sample details:', err);
+            alert('Error loading sample details');
+        });
+}
+</script>
+{% endblock %}

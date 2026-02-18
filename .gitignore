@@ -1,0 +1,16 @@
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+.venv
+temp/
+instance/
+.DS_Store
+*.log
+*.pid
+gunicorn.pid
+# Données sources (fichiers volumineux)
+*.tsv
+# Claude Code (config locale)
+.claude/
