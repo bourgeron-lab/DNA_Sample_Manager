@@ -1,0 +1,121 @@
+digraph DNA_Sample_Manager {
+    graph [
+        rankdir=LR
+        bgcolor="white"
+        fontname="Helvetica Neue, Arial, sans-serif"
+        pad="0.5"
+        nodesep="0.6"
+        ranksep="1.2"
+        splines=polyline
+    ]
+    node [
+        shape=none
+        fontname="Helvetica Neue, Arial, sans-serif"
+        fontsize=11
+        margin=0
+    ]
+    edge [
+        fontname="Helvetica Neue, Arial, sans-serif"
+        fontsize=10
+        color="#555555"
+        arrowhead=crow
+        arrowtail=tee
+        dir=both
+    ]
+
+    # ── INDIVIDUAL ─────────────────────────────────────────────
+    individual [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD BGCOLOR="#2563EB" ALIGN="CENTER" COLSPAN="3">
+                <FONT COLOR="white"><B>individual</B></FONT>
+            </TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#6B7280">PK</FONT></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">Integer</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#F59E0B">UK</FONT></TD><TD ALIGN="LEFT">individual_id</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">aliases</TD><TD ALIGN="LEFT">String(100)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">family_id</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">sex</TD><TD ALIGN="LEFT">Integer (0/1/2)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">phenotype</TD><TD ALIGN="LEFT">String(20)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">projects</TD><TD ALIGN="LEFT">String(200)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">other_family_codes</TD><TD ALIGN="LEFT">String(100)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">notes</TD><TD ALIGN="LEFT">Text</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DateTime</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">updated_at</TD><TD ALIGN="LEFT">DateTime</TD></TR>
+        </TABLE>
+    >]
+
+    # ── SAMPLE ─────────────────────────────────────────────────
+    sample [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD BGCOLOR="#059669" ALIGN="CENTER" COLSPAN="3">
+                <FONT COLOR="white"><B>sample</B></FONT>
+            </TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#6B7280">PK</FONT></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">Integer</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#F59E0B">UK</FONT></TD><TD ALIGN="LEFT">sample_id</TD><TD ALIGN="LEFT">String(20)</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#DC2626">FK</FONT></TD><TD ALIGN="LEFT">individual_id</TD><TD ALIGN="LEFT">→ individual.id</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">sample_type</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">arrival_date</TD><TD ALIGN="LEFT">Date</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">notes</TD><TD ALIGN="LEFT">Text</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DateTime</TD></TR>
+        </TABLE>
+    >]
+
+    # ── BOX ────────────────────────────────────────────────────
+    box [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD BGCOLOR="#D97706" ALIGN="CENTER" COLSPAN="3">
+                <FONT COLOR="white"><B>box</B></FONT>
+            </TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#6B7280">PK</FONT></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">Integer</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">name</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">box_type</TD><TD ALIGN="LEFT">stock / working</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">freezer</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">notes</TD><TD ALIGN="LEFT">Text</TD></TR>
+        </TABLE>
+    >]
+
+    # ── TUBE ───────────────────────────────────────────────────
+    tube [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD BGCOLOR="#7C3AED" ALIGN="CENTER" COLSPAN="3">
+                <FONT COLOR="white"><B>tube</B></FONT>
+            </TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#6B7280">PK</FONT></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">Integer</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#F59E0B">UK</FONT></TD><TD ALIGN="LEFT">barcode</TD><TD ALIGN="LEFT">String(20)</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#DC2626">FK</FONT></TD><TD ALIGN="LEFT">sample_id</TD><TD ALIGN="LEFT">→ sample.id</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#DC2626">FK</FONT></TD><TD ALIGN="LEFT">box_id</TD><TD ALIGN="LEFT">→ box.id</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">position_row</TD><TD ALIGN="LEFT">Integer (1-9)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">position_col</TD><TD ALIGN="LEFT">Integer (1-12)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">concentration</TD><TD ALIGN="LEFT">Float (ng/µL)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">quality</TD><TD ALIGN="LEFT">Good/Average/Poor</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">initial_volume</TD><TD ALIGN="LEFT">Float (µL)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">current_volume</TD><TD ALIGN="LEFT">Float (µL)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">source</TD><TD ALIGN="LEFT">Blood/Saliva/…</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">tube_type</TD><TD ALIGN="LEFT">stock/working/deleted</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">notes</TD><TD ALIGN="LEFT">Text</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DateTime</TD></TR>
+        </TABLE>
+    >]
+
+    # ── USAGE ──────────────────────────────────────────────────
+    usage [label=<
+        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5">
+            <TR><TD BGCOLOR="#6B7280" ALIGN="CENTER" COLSPAN="3">
+                <FONT COLOR="white"><B>usage</B></FONT>
+            </TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#6B7280">PK</FONT></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">Integer</TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT COLOR="#DC2626">FK</FONT></TD><TD ALIGN="LEFT">tube_id</TD><TD ALIGN="LEFT">→ tube.id</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">user_name</TD><TD ALIGN="LEFT">String(50)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">date_out</TD><TD ALIGN="LEFT">Date</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">date_return</TD><TD ALIGN="LEFT">Date</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">volume_taken</TD><TD ALIGN="LEFT">Float (µL)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">purpose</TD><TD ALIGN="LEFT">String(100)</TD></TR>
+            <TR><TD ALIGN="LEFT"></TD><TD ALIGN="LEFT">notes</TD><TD ALIGN="LEFT">Text</TD></TR>
+        </TABLE>
+    >]
+
+    # ── RELATIONS ──────────────────────────────────────────────
+    individual -> sample [label="  1         N  "]
+    sample     -> tube   [label="  1         N  "]
+    box        -> tube   [label="  1         N  "]
+    tube       -> usage  [label="  1         N  "]
+}

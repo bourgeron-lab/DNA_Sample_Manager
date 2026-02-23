@@ -328,7 +328,7 @@ function loadTubes() {
     const status = document.getElementById('filterStatus').value;
     const type = document.getElementById('filterType').value;
     
-    let url = '/api/tubes?';
+    let url = '/api/tubes?limit=5000&';
     if (search) url += `search=${encodeURIComponent(search)}&`;
     if (box) url += `box=${box}&`;
     if (status) url += `status=${encodeURIComponent(status)}&`;
@@ -377,6 +377,15 @@ function displayTubes() {
             <td><span class="badge badge-status ${statusClass}">${esc(tube.status)}</span></td>
             <td><span class="badge bg-${tube.tube_type === 'stock' ? 'primary' : tube.tube_type === 'working' ? 'warning' : 'danger'}">${esc(tube.tube_type)}</span></td>
             <td>
+                ${tube.tube_type === 'stock'
+                    ? `<button class="btn btn-sm btn-outline-warning btn-action" onclick="toggleTubeType(${tube.id}, 'working')" title="Passer en working">
+                         <i class="bi bi-box-arrow-up"></i>
+                       </button>`
+                    : tube.tube_type === 'working'
+                    ? `<button class="btn btn-sm btn-outline-primary btn-action" onclick="toggleTubeType(${tube.id}, 'stock')" title="Remettre en stock">
+                         <i class="bi bi-box-arrow-in-down"></i>
+                       </button>`
+                    : ''}
                 <button class="btn btn-sm btn-outline-warning btn-action" onclick="openUsageModal(${tube.id}, '${esc(tube.barcode)}')" title="Record Usage">
                     <i class="bi bi-arrow-down-circle"></i>
                 </button>
@@ -397,6 +406,23 @@ function resetFilters() {
     document.getElementById('filterStatus').value = '';
     document.getElementById('filterType').value = '';
     loadTubes();
+}
+
+function toggleTubeType(id, newType) {
+    fetch(`/api/tubes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tube_type: newType })
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.error) {
+            alert('Erreur: ' + result.error);
+        } else {
+            loadTubes();
+        }
+    })
+    .catch(err => console.error('Error toggling tube type:', err));
 }
 
 function exportTubes(format) {
