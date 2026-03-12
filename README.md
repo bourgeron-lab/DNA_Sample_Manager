@@ -51,6 +51,9 @@ sandbox_adn/
 | GET | `/api/tubes` | Tubes (filtres : search, box, status, type) |
 | GET | `/api/tubes/export` | Export tubes (`?format=tsv` ou `?format=xlsx`) |
 | GET | `/api/boxes` | Boîtes de stockage |
+| GET | `/api/usages` | Historique d'utilisation des tubes |
+| POST | `/api/usages` | Enregistrer une utilisation |
+| PUT | `/api/usages/<id>` | Modifier un usage record |
 | GET | `/api/stats` | Statistiques du tableau de bord |
 
 ## Scripts utilitaires
