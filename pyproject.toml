@@ -5,6 +5,8 @@ description = "Application web de gestion d'échantillons ADN"
 requires-python = ">=3.10"
 dependencies = [
     "flask>=3.0.0",
+    "flask-bcrypt>=1.0.1",
+    "flask-login>=0.6.3",
     "flask-sqlalchemy>=3.1.1",
     "openpyxl>=3.1.0",
     "typer>=0.12.0",

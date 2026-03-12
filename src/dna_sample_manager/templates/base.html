@@ -202,9 +202,19 @@
             </a>
         </nav>
         <div class="mt-auto pt-4 border-top border-secondary">
-            <small class="text-muted d-block px-3">
-                <i class="bi bi-info-circle"></i> Gestion ADN v2.0
-            </small>
+            {% if current_user.is_admin %}
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin_users_page' }}" href="{{ url_for('admin_users_page') }}">
+                <i class="bi bi-shield-lock"></i> Utilisateurs
+            </a>
+            {% endif %}
+            <div class="px-3 py-2 d-flex align-items-center justify-content-between">
+                <small class="text-muted">
+                    <i class="bi bi-person-circle"></i> {{ current_user.username }}
+                </small>
+                <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-light" title="Déconnexion">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
+            </div>
         </div>
     </div>
 
