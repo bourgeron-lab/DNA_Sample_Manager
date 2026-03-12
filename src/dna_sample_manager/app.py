@@ -50,6 +50,8 @@ def create_app(db_path=None):
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     else:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dna_samples.db'
+    # SQLite timeout: wait up to 30s if database is locked (e.g. on network volumes)
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'timeout': 30}}
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
