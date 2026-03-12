@@ -59,6 +59,9 @@ Box ◄─── (N:1) ───────────────────
 - `GET /tubes`, `GET /boxes`, `GET /sujets`, `GET /samples` — pages UI
 - `GET /api/tubes?search=&box=&status=&type=&limit=&page=` — liste paginée avec filtres
 - `GET /api/tubes/export?format=tsv|xlsx&search=&box=&status=&type=` — export (doit être avant `/api/tubes/<int:id>`)
+- `GET /api/usages?tube=` — historique d'utilisation des tubes
+- `POST /api/usages` — enregistrer une utilisation (déduit le volume du tube)
+- `PUT /api/usages/<int:id>` — modifier un usage record (ajuste le volume du tube selon le delta)
 - `GET /api/stats` — statistiques (optimisé : charge uniquement les colonnes nécessaires)
 - `GET /api/projects` — liste des projets (extrait depuis la colonne `projects` des individus)
 
