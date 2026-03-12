@@ -1128,6 +1128,55 @@ def create_usage():
     return jsonify(usage.to_dict()), 201
 
 
+@app.route('/api/usages/<int:usage_id>', methods=['PUT'])
+def update_usage(usage_id):
+    """Update an existing usage record"""
+    usage = Usage.query.get(usage_id)
+    if not usage:
+        return jsonify({'error': 'Usage record non trouvé'}), 404
+
+    data = request.json
+
+    # Handle volume change — adjust tube.current_volume accordingly
+    new_volume_taken = None
+    if data.get('volume_taken') is not None:
+        try:
+            new_volume_taken = float(data['volume_taken'])
+        except (ValueError, TypeError):
+            return jsonify({'error': 'volume_taken doit être un nombre'}), 400
+        if new_volume_taken <= 0:
+            return jsonify({'error': 'volume_taken doit être positif'}), 400
+
+    tube = usage.tube
+    if tube and tube.current_volume is not None and new_volume_taken is not None:
+        old_volume_taken = usage.volume_taken or 0
+        delta = new_volume_taken - old_volume_taken
+        if delta > 0 and delta > tube.current_volume:
+            return jsonify({
+                'error': f'Volume insuffisant. Disponible : {tube.current_volume} µL, delta demandé : {delta} µL'
+            }), 400
+        tube.current_volume -= delta
+
+    if new_volume_taken is not None:
+        usage.volume_taken = new_volume_taken
+
+    # Update other fields
+    if 'user_name' in data:
+        usage.user_name = data['user_name']
+    if 'purpose' in data:
+        usage.purpose = data['purpose']
+    if 'notes' in data:
+        usage.notes = data['notes']
+    if 'date_out' in data and data['date_out']:
+        try:
+            usage.date_out = datetime.strptime(data['date_out'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Format de date invalide. Utilisez AAAA-MM-JJ'}), 400
+
+    db.session.commit()
+    return jsonify(usage.to_dict())
+
+
 # =============================================================================
 # API - STATISTICS
 # =============================================================================
