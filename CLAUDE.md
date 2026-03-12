@@ -28,18 +28,21 @@ Le navigateur s'ouvre automatiquement (via `threading.Timer` + `webbrowser.open`
 | `src/dna_sample_manager/cli.py` | Entry point CLI, instancie Flask via `create_app(db_path)` |
 | `src/dna_sample_manager/templates/` | 8 templates Jinja2 (Bootstrap 5) |
 | `instance/dna_samples.db` | Base de données SQLite — ne jamais supprimer |
-| `pyproject.toml` | Dépendances : flask, flask-sqlalchemy, openpyxl, typer |
+| `pyproject.toml` | Dépendances : flask, flask-sqlalchemy, flask-login, flask-bcrypt, openpyxl, typer |
 | `uv.lock` | Versions exactes — ne pas modifier manuellement |
 
 ## Modèles de données (`app.py`)
 
 ```
+User (auth)
+
 Individual  ─── (1:N) ──→  Sample  ─── (1:N) ──→  Tube
                                                       │
-                                              TubeUsage (historique)
+                                              Usage (historique)
 Box ◄─── (N:1) ─────────────────────────────────── Tube
 ```
 
+- **User** : `username` (unique), `password_hash`, `is_admin` — authentification Flask-Login + bcrypt
 - **Individual** : `individual_id`, `aliases`, `family_id`, `sex`, `phenotype`, `projects`
 - **Sample** : `sample_id`, `sample_type` (ADN/ARN/etc.), lié à un `Individual`
 - **Tube** : `barcode`, `tube_type` (stock/working), `current_volume`, `initial_volume`, lié à `Sample` + `Box`
@@ -52,6 +55,15 @@ Box ◄─── (N:1) ───────────────────
 - `_tubes_to_dicts(tubes)` — sérialise une liste de `Tube` en dicts avec batch-loading des relations
 - `create_app(db_path=None)` — factory Flask, appelée par `cli.py`. `db_path` est un chemin absolu vers le fichier SQLite
 - Encodage TSV : `utf-8-sig` (BOM) pour compatibilité Excel Windows
+
+## Authentification
+
+- Flask-Login + Flask-Bcrypt, toutes les routes protégées via `@app.before_request`
+- Seed automatique : si aucun utilisateur en base, crée `admin/admin` au démarrage
+- `GET/POST /login` — page de connexion
+- `GET /logout` — déconnexion
+- `GET /admin/users` — gestion des utilisateurs (admin uniquement)
+- `GET/POST/PUT/DELETE /api/users` — CRUD utilisateurs (admin uniquement)
 
 ## Routes principales
 
@@ -93,4 +105,4 @@ Lancer avec : `uv run python <script>.py`
 
 - `SECRET_KEY` via `os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))`
 - XSS : fonction `esc()` dans les templates pour échapper les données dans les template literals JS
-- Pas d'authentification (usage interne réseau uniquement)
+- Authentification : Flask-Login avec mots de passe hashés (bcrypt). Admin par défaut `admin/admin`

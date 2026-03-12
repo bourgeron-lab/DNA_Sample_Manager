@@ -3,8 +3,11 @@ DNA Sample Manager - Flask Application for DNA Sample Management
 Refactored with Individual model based on TSV import format
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_bcrypt import Bcrypt
+from functools import wraps
 from datetime import datetime, timezone
 import os
 import secrets
@@ -29,6 +32,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
 
 db = SQLAlchemy()
+bcrypt = Bcrypt()
+login_manager = LoginManager()
+login_manager.login_view = 'login'
+login_manager.login_message = 'Veuillez vous connecter pour accéder à cette page.'
+login_manager.login_message_category = 'warning'
 
 
 def create_app(db_path=None):
@@ -43,13 +51,50 @@ def create_app(db_path=None):
     else:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dna_samples.db'
     db.init_app(app)
+    bcrypt.init_app(app)
+    login_manager.init_app(app)
     with app.app_context():
         db.create_all()
+        # Seed default admin if no users exist
+        if User.query.count() == 0:
+            admin = User(
+                username='admin',
+                password_hash=bcrypt.generate_password_hash('admin').decode('utf-8'),
+                is_admin=True,
+            )
+            db.session.add(admin)
+            db.session.commit()
+            print('*** Default admin created (admin/admin) — please change the password! ***')
     return app
 
 # =============================================================================
 # DATABASE MODELS
 # =============================================================================
+
+class User(UserMixin, db.Model):
+    """User model for authentication"""
+    __tablename__ = 'user'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+def admin_required(f):
+    """Decorator: requires authenticated admin user."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if not current_user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
 
 class Individual(db.Model):
     """Model for individuals - based on TSV import format"""
@@ -327,6 +372,43 @@ class Usage(db.Model):
             'purpose': self.purpose,
             'notes': self.notes
         }
+
+
+# =============================================================================
+# AUTH ROUTES
+# =============================================================================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        flash('Nom d\'utilisateur ou mot de passe incorrect.', 'danger')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout and redirect to login page"""
+    logout_user()
+    return redirect(url_for('login'))
+
+
+@app.before_request
+def require_login():
+    """Require authentication for all routes except login and static."""
+    allowed = ('login', 'static')
+    if request.endpoint and request.endpoint not in allowed and not current_user.is_authenticated:
+        return redirect(url_for('login', next=request.url))
 
 
 # =============================================================================
@@ -1491,6 +1573,101 @@ def add_sample_to_sujet(id):
         'sample_id': sample.sample_id,
         'sample_type': sample.sample_type
     }}), 201
+
+
+# =============================================================================
+# ADMIN - USER MANAGEMENT
+# =============================================================================
+
+@app.route('/admin/users')
+@admin_required
+def admin_users_page():
+    """User management page (admin only)"""
+    return render_template('admin_users.html')
+
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def get_users():
+    """List all users"""
+    users = User.query.order_by(User.username).all()
+    return jsonify([{
+        'id': u.id,
+        'username': u.username,
+        'is_admin': u.is_admin,
+    } for u in users])
+
+
+@app.route('/api/users', methods=['POST'])
+@admin_required
+def create_user():
+    """Create a new user"""
+    data = request.json
+    username = (data.get('username') or '').strip()
+    password = data.get('password', '')
+
+    if not username or not password:
+        return jsonify({'error': 'Nom d\'utilisateur et mot de passe requis'}), 400
+    if len(password) < 4:
+        return jsonify({'error': 'Le mot de passe doit faire au moins 4 caractères'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'error': 'Ce nom d\'utilisateur existe déjà'}), 409
+
+    user = User(
+        username=username,
+        password_hash=bcrypt.generate_password_hash(password).decode('utf-8'),
+        is_admin=bool(data.get('is_admin', False)),
+    )
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'id': user.id, 'username': user.username, 'is_admin': user.is_admin}), 201
+
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id):
+    """Update a user (password, admin status)"""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'Utilisateur non trouvé'}), 404
+
+    data = request.json
+
+    if 'password' in data and data['password']:
+        if len(data['password']) < 4:
+            return jsonify({'error': 'Le mot de passe doit faire au moins 4 caractères'}), 400
+        user.password_hash = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+
+    if 'is_admin' in data:
+        # Prevent removing admin from self
+        if user.id == current_user.id and not data['is_admin']:
+            return jsonify({'error': 'Vous ne pouvez pas retirer vos propres droits admin'}), 400
+        user.is_admin = bool(data['is_admin'])
+
+    if 'username' in data and data['username'].strip():
+        new_username = data['username'].strip()
+        existing = User.query.filter_by(username=new_username).first()
+        if existing and existing.id != user.id:
+            return jsonify({'error': 'Ce nom d\'utilisateur existe déjà'}), 409
+        user.username = new_username
+
+    db.session.commit()
+    return jsonify({'id': user.id, 'username': user.username, 'is_admin': user.is_admin})
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    """Delete a user"""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'Utilisateur non trouvé'}), 404
+    if user.id == current_user.id:
+        return jsonify({'error': 'Vous ne pouvez pas supprimer votre propre compte'}), 400
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'Utilisateur supprimé'})
 
 
 if __name__ == '__main__':

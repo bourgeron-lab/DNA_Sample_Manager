@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Users - DNA Sample Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-people-fill"></i> Gestion des utilisateurs</h2>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+            <i class="bi bi-person-plus"></i> Nouvel utilisateur
+        </button>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nom d'utilisateur</th>
+                            <th>Admin</th>
+                            <th style="width: 150px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTable">
+                        <tr><td colspan="4" class="text-center">Chargement...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit User Modal -->
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userModalTitle">Nouvel utilisateur</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="userId">
+                <div class="mb-3">
+                    <label class="form-label">Nom d'utilisateur</label>
+                    <input type="text" class="form-control" id="userUsername" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" id="passwordLabel">Mot de passe</label>
+                    <input type="password" class="form-control" id="userPassword">
+                    <small class="text-muted" id="passwordHint" style="display:none;">
+                        Laisser vide pour ne pas modifier le mot de passe.
+                    </small>
+                </div>
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="userIsAdmin">
+                    <label class="form-check-label" for="userIsAdmin">Administrateur</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="saveUser()">
+                    <i class="bi bi-check-lg"></i> Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let modal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    modal = new bootstrap.Modal(document.getElementById('userModal'));
+    loadUsers();
+});
+
+function loadUsers() {
+    fetch('/api/users')
+        .then(r => r.json())
+        .then(users => {
+            const tbody = document.getElementById('usersTable');
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Aucun utilisateur</td></tr>';
+                return;
+            }
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td>${u.id}</td>
+                    <td>${u.username}</td>
+                    <td>${u.is_admin ? '<span class="badge bg-primary">Admin</span>' : '<span class="badge bg-secondary">User</span>'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditModal(${u.id}, '${u.username}', ${u.is_admin})" title="Modifier">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id}, '${u.username}')" title="Supprimer">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        });
+}
+
+function openCreateModal() {
+    document.getElementById('userModalTitle').textContent = 'Nouvel utilisateur';
+    document.getElementById('userId').value = '';
+    document.getElementById('userUsername').value = '';
+    document.getElementById('userPassword').value = '';
+    document.getElementById('userIsAdmin').checked = false;
+    document.getElementById('passwordHint').style.display = 'none';
+    document.getElementById('userPassword').required = true;
+    modal.show();
+}
+
+function openEditModal(id, username, isAdmin) {
+    document.getElementById('userModalTitle').textContent = 'Modifier l\'utilisateur';
+    document.getElementById('userId').value = id;
+    document.getElementById('userUsername').value = username;
+    document.getElementById('userPassword').value = '';
+    document.getElementById('userIsAdmin').checked = isAdmin;
+    document.getElementById('passwordHint').style.display = 'block';
+    document.getElementById('userPassword').required = false;
+    modal.show();
+}
+
+function saveUser() {
+    const id = document.getElementById('userId').value;
+    const data = {
+        username: document.getElementById('userUsername').value.trim(),
+        is_admin: document.getElementById('userIsAdmin').checked,
+    };
+    const password = document.getElementById('userPassword').value;
+    if (password) data.password = password;
+
+    const url = id ? `/api/users/${id}` : '/api/users';
+    const method = id ? 'PUT' : 'POST';
+
+    if (!id && !password) {
+        alert('Le mot de passe est requis pour un nouvel utilisateur.');
+        return;
+    }
+
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => {
+        if (!r.ok) return r.json().then(err => { throw new Error(err.error); });
+        return r.json();
+    })
+    .then(() => {
+        modal.hide();
+        loadUsers();
+    })
+    .catch(err => alert('Erreur : ' + err.message));
+}
+
+function deleteUser(id, username) {
+    if (!confirm(`Supprimer l'utilisateur "${username}" ?`)) return;
+
+    fetch(`/api/users/${id}`, { method: 'DELETE' })
+    .then(r => {
+        if (!r.ok) return r.json().then(err => { throw new Error(err.error); });
+        return r.json();
+    })
+    .then(() => loadUsers())
+    .catch(err => alert('Erreur : ' + err.message));
+}
+</script>
+{% endblock %}

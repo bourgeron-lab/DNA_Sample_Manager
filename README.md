@@ -41,10 +41,20 @@ sandbox_adn/
 └── import_*.py               # Scripts d'import de données
 ```
 
+## Authentification
+
+Toutes les pages et API sont protégées par login. Au premier lancement, un compte admin est créé automatiquement :
+- **Utilisateur** : `admin`
+- **Mot de passe** : `admin`
+
+Changez le mot de passe depuis la page **Utilisateurs** (visible uniquement pour les admins dans la sidebar).
+
 ## API REST
 
 | Méthode | Route | Description |
 |---------|-------|-------------|
+| GET/POST | `/api/users` | Gestion des utilisateurs (admin) |
+| PUT/DELETE | `/api/users/<id>` | Modifier/supprimer un utilisateur (admin) |
 | GET | `/api/individuals` | Liste des individus (pagination, recherche) |
 | GET/POST | `/api/sujets` | Individus (alias) |
 | GET | `/api/samples` | Échantillons |
