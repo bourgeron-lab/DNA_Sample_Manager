@@ -64,6 +64,53 @@
             </div>
         </div>
     </div>
+
+    <!-- Audit log -->
+    <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-journal-text"></i> Journal des modifications</span>
+            <span class="badge bg-secondary" id="auditCount">0</span>
+        </div>
+        <div class="card-body filter-section border-bottom">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <input type="text" class="form-control" id="auditSearch" placeholder="Code-barres, sample, individu...">
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="auditEntity">
+                        <option value="">Tous les objets</option>
+                        <option value="tube">Tubes</option>
+                        <option value="usage">Usages</option>
+                        <option value="sample">Samples</option>
+                        <option value="individual">Individus</option>
+                        <option value="box">Boîtes</option>
+                        {% if current_user.is_admin %}<option value="user">Utilisateurs</option>{% endif %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <input type="text" class="form-control" id="auditUser" placeholder="Utilisateur (exact)">
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Utilisateur</th>
+                            <th>Action</th>
+                            <th>Objet</th>
+                            <th>Détails</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditTable">
+                        <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
     
     <!-- Edit Usage Modal -->
     <div class="modal fade" id="editUsageModal" tabindex="-1">
@@ -85,7 +132,8 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">User</label>
-                        <input type="text" class="form-control" id="editUsageUser">
+                        <input type="text" class="form-control" id="editUsageUser" readonly>
+                        <div class="form-text">Non modifiable : compte ayant enregistré le prélèvement.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Volume (µL)</label>
@@ -138,11 +186,29 @@
 
 {% block extra_js %}
 <script>
+// XSS escaping helper
+function esc(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+}
+
 let allUsages = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     loadHistory();
-    
+    loadAudit();
+
+    let auditTimeout;
+    ['auditSearch', 'auditUser'].forEach(id => {
+        document.getElementById(id).addEventListener('input', function() {
+            clearTimeout(auditTimeout);
+            auditTimeout = setTimeout(loadAudit, 300);
+        });
+    });
+    document.getElementById('auditEntity').addEventListener('change', loadAudit);
+
     // Search listener
     let searchTimeout;
     document.getElementById('searchHistory').addEventListener('input', function() {
@@ -204,11 +270,11 @@ function displayHistory(usages) {
         <tr>
             <td>${usage.id}</td>
             <td>${usage.date_out ? new Date(usage.date_out).toLocaleDateString() : '-'}</td>
-            <td><code>${usage.tube_barcode || '-'}</code></td>
-            <td>${usage.user_name || '-'}</td>
-            <td>${usage.volume_taken ? usage.volume_taken + ' µL' : '-'}</td>
-            <td>${usage.purpose || '-'}</td>
-            <td><small class="text-muted">${usage.notes || '-'}</small></td>
+            <td><code>${esc(usage.tube_barcode || '-')}</code></td>
+            <td>${esc(usage.user_name || '-')}</td>
+            <td>${usage.volume_taken ? esc(usage.volume_taken) + ' µL' : '-'}</td>
+            <td>${esc(usage.purpose || '-')}</td>
+            <td><small class="text-muted">${esc(usage.notes || '-')}</small></td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="openEditUsage(${usage.id})" title="Edit">
                     <i class="bi bi-pencil"></i>
@@ -216,6 +282,64 @@ function displayHistory(usages) {
             </td>
         </tr>
     `).join('');
+}
+
+const AUDIT_ACTIONS = {
+    create: ['Création', 'bg-success'],
+    update: ['Modification', 'bg-primary'],
+    delete: ['Suppression', 'bg-danger'],
+};
+
+function formatAuditValue(v) {
+    if (v === null || v === undefined || v === '') return '∅';
+    return String(v);
+}
+
+function formatAuditChanges(entry) {
+    const parts = Object.entries(entry.changes || {}).map(([field, value]) => {
+        if (entry.action === 'update' && Array.isArray(value)) {
+            return `<b>${esc(field)}</b> : ${esc(formatAuditValue(value[0]))} → ${esc(formatAuditValue(value[1]))}`;
+        }
+        return `<b>${esc(field)}</b> : ${esc(formatAuditValue(value))}`;
+    });
+    return parts.length ? parts.join('<br>') : '<span class="text-muted">-</span>';
+}
+
+function loadAudit() {
+    const params = new URLSearchParams({ limit: 500 });
+    const search = document.getElementById('auditSearch').value.trim();
+    const entity = document.getElementById('auditEntity').value;
+    const user = document.getElementById('auditUser').value.trim();
+    if (search) params.set('search', search);
+    if (entity) params.set('entity', entity);
+    if (user) params.set('user', user);
+
+    fetch('/api/audit?' + params.toString())
+        .then(response => response.json())
+        .then(entries => {
+            const tbody = document.getElementById('auditTable');
+            document.getElementById('auditCount').textContent = entries.length;
+            if (!entries.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Aucune modification enregistrée</td></tr>';
+                return;
+            }
+            tbody.innerHTML = entries.map(e => {
+                const [label, badge] = AUDIT_ACTIONS[e.action] || [e.action, 'bg-secondary'];
+                return `
+                <tr>
+                    <td class="text-nowrap"><small>${esc(new Date(e.timestamp).toLocaleString())}</small></td>
+                    <td>${esc(e.username || '-')}</td>
+                    <td><span class="badge ${badge}">${esc(label)}</span></td>
+                    <td class="text-nowrap">${esc(e.entity)} ${e.label ? '<code>' + esc(e.label) + '</code>' : '#' + esc(e.entity_id)}</td>
+                    <td><small>${formatAuditChanges(e)}</small></td>
+                </tr>`;
+            }).join('');
+        })
+        .catch(err => {
+            console.error('Error loading audit log:', err);
+            document.getElementById('auditTable').innerHTML =
+                '<tr><td colspan="5" class="text-center text-danger">Erreur de chargement du journal</td></tr>';
+        });
 }
 
 function resetFilters() {
@@ -244,7 +368,6 @@ function saveEditUsage() {
     const usageId = document.getElementById('editUsageId').value;
     const data = {
         date_out: document.getElementById('editUsageDate').value,
-        user_name: document.getElementById('editUsageUser').value,
         volume_taken: document.getElementById('editUsageVolume').value ? parseFloat(document.getElementById('editUsageVolume').value) : null,
         purpose: document.getElementById('editUsagePurpose').value,
         notes: document.getElementById('editUsageNotes').value
@@ -262,6 +385,7 @@ function saveEditUsage() {
     .then(() => {
         bootstrap.Modal.getInstance(document.getElementById('editUsageModal')).hide();
         loadHistory();
+        loadAudit();
     })
     .catch(err => {
         alert('Error: ' + err.message);
