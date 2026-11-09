@@ -921,8 +921,9 @@ def _build_tubes_query(search='', box='', status='', tube_type='', limit=200):
     if tube_type:
         query = query.filter(Tube.tube_type == tube_type)
     else:
-        # Par défaut, exclure les tubes archivés (deleted)
-        query = query.filter(Tube.tube_type != 'deleted')
+        # Par défaut, exclure les tubes archivés (deleted).
+        # NB : en SQL, NULL != 'deleted' est NULL -> il faut inclure explicitement les types NULL
+        query = query.filter(db.or_(Tube.tube_type == None, Tube.tube_type != 'deleted'))
 
     if status:
         if status == 'Empty':
@@ -1183,7 +1184,11 @@ def update_tube(id):
 
     # Archivage : si le type passe à "deleted", sauvegarder la position dans les notes
     new_type = data.get('tube_type')
-    if new_type == 'deleted' and tube.tube_type != 'deleted':
+    archived_now = new_type == 'deleted' and tube.tube_type != 'deleted'
+    if archived_now:
+        # Notes de référence : celles envoyées par le formulaire si présentes (sinon
+        # elles écraseraient le préfixe d'archivage plus bas), sinon celles en base
+        base_notes = data['notes'] if 'notes' in data else tube.notes
         archive_info = []
         if tube.box:
             archive_info.append(f"Boîte: {tube.box.name}")
@@ -1194,15 +1199,26 @@ def update_tube(id):
             archive_info.append(f"Position: {row_letter}{tube.position_col}")
         if archive_info:
             prefix = f"[Archivé le {datetime.now().strftime('%Y-%m-%d')}] {', '.join(archive_info)}"
-            tube.notes = f"{prefix}\n{tube.notes}" if tube.notes else prefix
+            tube.notes = f"{prefix}\n{base_notes}" if base_notes else prefix
+        else:
+            tube.notes = base_notes
         tube.box_id = None
         tube.position_row = None
         tube.position_col = None
+
+    # Un tube archivé n'occupe aucune position : ignorer box/position envoyées par le
+    # formulaire (qui renvoie les anciennes valeurs et annulerait la libération ci-dessus)
+    final_type = new_type if 'tube_type' in data else tube.tube_type
+    position_keys = ('box_id', 'position_row', 'position_col')
 
     for key in ['barcode', 'sample_id', 'box_id', 'position_row', 'position_col',
                 'concentration', 'quality', 'initial_volume', 'current_volume',
                 'source', 'tube_type', 'notes']:
         if key in data:
+            if final_type == 'deleted' and key in position_keys:
+                continue
+            if archived_now and key == 'notes':
+                continue  # déjà fusionnées avec le préfixe d'archivage
             value = data[key]
             # Ne pas écraser une FK existante par None (protection contre le bug select async)
             if value is None and key in ('sample_id', 'box_id') and getattr(tube, key) is not None:

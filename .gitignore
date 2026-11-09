@@ -14,3 +14,4 @@ gunicorn.pid
 *.tsv
 # Claude Code (config locale)
 .claude/
+.pytest_cache/
