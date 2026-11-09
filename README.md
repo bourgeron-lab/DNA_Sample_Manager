@@ -49,6 +49,13 @@ Toutes les pages et API sont protégées par login. Au premier lancement, un com
 
 Changez le mot de passe depuis la page **Utilisateurs** (visible uniquement pour les admins dans la sidebar).
 
+Les requêtes qui modifient des données sont protégées contre le CSRF (jeton ajouté automatiquement par les pages).
+
+## Traçabilité
+
+- Chaque utilisation de tube est enregistrée au nom du compte connecté (non modifiable).
+- Toute création, modification ou suppression (tubes, usages, samples, individus, boîtes, utilisateurs) est inscrite dans un **journal des modifications** (qui, quand, valeurs avant → après), consultable en bas de la page **Historique**. Les mots de passe n'y apparaissent jamais.
+
 ## API REST
 
 | Méthode | Route | Description |
@@ -64,6 +71,7 @@ Changez le mot de passe depuis la page **Utilisateurs** (visible uniquement pour
 | GET | `/api/usages` | Historique d'utilisation des tubes |
 | POST | `/api/usages` | Enregistrer une utilisation |
 | PUT | `/api/usages/<id>` | Modifier un usage record |
+| GET | `/api/audit` | Journal des modifications (filtres : entity, entity_id, user, action, search, limit) |
 | GET | `/api/stats` | Statistiques du tableau de bord |
 
 ## Scripts utilitaires

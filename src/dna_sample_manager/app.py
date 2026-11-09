@@ -3,13 +3,17 @@ DNA Sample Manager - Flask Application for DNA Sample Management
 Refactored with Individual model based on TSV import format
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash, has_request_context, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from sqlalchemy import event, inspect as sa_inspect
+from sqlalchemy.orm import Session
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 import os
+import json
 import secrets
 import csv
 from io import BytesIO, StringIO
@@ -30,9 +34,13 @@ def safe_int(value, default=0, min_val=None, max_val=None):
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+# Jeton CSRF valable pour toute la durée de la session (pas d'expiration au bout d'1 h
+# qui casserait l'enregistrement sur une page restée ouverte longtemps)
+app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
+csrf = CSRFProtect()
 login_manager = LoginManager()
 login_manager.login_view = 'login'
 login_manager.login_message = 'Veuillez vous connecter pour accéder à cette page.'
@@ -55,6 +63,7 @@ def create_app(db_path=None):
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
+    csrf.init_app(app)
     with app.app_context():
         db.create_all()
         # Seed default admin if no users exist
@@ -376,9 +385,155 @@ class Usage(db.Model):
         }
 
 
+class AuditLog(db.Model):
+    """Journal des modifications : qui a créé / modifié / supprimé quoi, et quand.
+
+    Alimenté automatiquement par le listener `_write_audit_log` (after_flush),
+    dans la même transaction que la modification elle-même.
+    """
+    __tablename__ = 'audit_log'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    user_id = db.Column(db.Integer, nullable=True, index=True)
+    username = db.Column(db.String(80), nullable=True)
+    action = db.Column(db.String(10), nullable=False)        # create / update / delete
+    entity = db.Column(db.String(30), nullable=False)        # tube, sample, individual, box, usage, user
+    entity_id = db.Column(db.Integer, nullable=True)
+    label = db.Column(db.String(100), nullable=True)         # ex. code-barres du tube
+    changes = db.Column(db.Text, nullable=True)              # JSON {champ: [ancien, nouveau]} ou {champ: valeur}
+
+    __table_args__ = (db.Index('ix_audit_log_entity', 'entity', 'entity_id'),)
+
+    def to_dict(self):
+        ts = self.timestamp
+        if ts is not None and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)  # SQLite renvoie des datetimes naïfs (stockés en UTC)
+        return {
+            'id': self.id,
+            'timestamp': ts.isoformat() if ts else None,
+            'user_id': self.user_id,
+            'username': self.username,
+            'action': self.action,
+            'entity': self.entity,
+            'entity_id': self.entity_id,
+            'label': self.label,
+            'changes': json.loads(self.changes) if self.changes else {},
+        }
+
+
+# Tables tracées -> attribut servant de libellé lisible
+AUDITED_ENTITIES = {
+    'tube': 'barcode',
+    'sample': 'sample_id',
+    'individual': 'individual_id',
+    'box': 'name',
+    'usage': None,
+    'user': 'username',
+}
+AUDIT_SKIP_FIELDS = {'created_at', 'updated_at'}
+AUDIT_HIDDEN_FIELDS = {'password_hash'}
+
+
+def _audit_value(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _audit_actor():
+    """(user_id, username) de l'auteur de la modification."""
+    if not has_request_context():
+        return None, 'système'  # scripts d'import, shell, etc.
+    return getattr(g, 'audit_actor', (None, None))
+
+
+def _audit_label(session, table, state):
+    attr = AUDITED_ENTITIES.get(table)
+    if attr:
+        return state.dict.get(attr)
+    if table == 'usage':
+        tube = state.dict.get('tube')
+        tube_id = state.dict.get('tube_id')
+        if tube is None and tube_id:
+            # Tube déjà chargé dans la session ? (pas de requête SQL pendant le flush)
+            key = sa_inspect(Tube).identity_key_from_primary_key((int(tube_id),))
+            tube = session.identity_map.get(key)
+        if tube is not None:
+            return f"tube {tube.__dict__.get('barcode')}"
+        return f'tube #{tube_id}' if tube_id else None
+    return None
+
+
+@event.listens_for(Session, 'after_flush')
+def _write_audit_log(session, flush_context):
+    """Enregistre chaque création / modification / suppression ORM dans audit_log."""
+    rows = []
+    pending = ([(o, 'create') for o in session.new]
+               + [(o, 'update') for o in session.dirty]
+               + [(o, 'delete') for o in session.deleted])
+    for obj, action in pending:
+        table = getattr(obj, '__tablename__', None)
+        if table not in AUDITED_ENTITIES:
+            continue
+        state = sa_inspect(obj)
+        changes = {}
+        for attr in state.mapper.column_attrs:
+            key = attr.key
+            if key in AUDIT_SKIP_FIELDS:
+                continue
+            if action == 'update':
+                hist = state.attrs[key].history
+                if not hist.has_changes():
+                    continue
+                old = hist.deleted[0] if hist.deleted else None
+                new = hist.added[0] if hist.added else None
+                if old == new:
+                    continue
+                if key in AUDIT_HIDDEN_FIELDS:
+                    changes[key] = ['***', '*** (modifié)']
+                else:
+                    changes[key] = [_audit_value(old), _audit_value(new)]
+            else:
+                if key in AUDIT_HIDDEN_FIELDS or key == 'id':
+                    continue
+                value = state.dict.get(key)
+                if value is not None and value != '':
+                    changes[key] = _audit_value(value)
+        if action == 'update' and not changes:
+            continue  # objet "dirty" sans changement de colonne réel
+        user_id, username = _audit_actor()
+        label = _audit_label(session, table, state)
+        rows.append({
+            'timestamp': datetime.now(timezone.utc),
+            'user_id': user_id,
+            'username': username,
+            'action': action,
+            'entity': table,
+            'entity_id': state.identity[0] if state.identity else state.dict.get('id'),
+            'label': str(label)[:100] if label is not None else None,
+            'changes': json.dumps(changes, ensure_ascii=False, default=str),
+        })
+    if rows:
+        # Insert "Core" directement sur la connexion : même transaction, sans re-déclencher de flush
+        session.connection().execute(AuditLog.__table__.insert(), rows)
+
+
 # =============================================================================
 # AUTH ROUTES
 # =============================================================================
+
+def _safe_next_url(target):
+    """Return target only if it is a local path (prevents open redirect), else None.
+
+    Accepts '/tubes?box=3' ; rejects 'https://evil.com', '//evil.com', '/\\evil.com'.
+    """
+    if not target or not target.startswith('/') or target.startswith('//'):
+        return None
+    if '\\' in target or any(ord(c) < 32 for c in target):
+        return None
+    return target
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -391,10 +546,20 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and bcrypt.check_password_hash(user.password_hash, password):
             login_user(user)
-            next_page = request.args.get('next')
+            next_page = _safe_next_url(request.args.get('next'))
             return redirect(next_page or url_for('index'))
         flash('Nom d\'utilisateur ou mot de passe incorrect.', 'danger')
     return render_template('login.html')
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """Jeton CSRF absent/invalide (souvent : serveur redémarré, page à recharger)."""
+    msg = 'Session expirée ou requête non autorisée (jeton CSRF invalide). Rechargez la page et réessayez.'
+    if request.path.startswith('/api/'):
+        return jsonify({'error': msg}), 400
+    flash(msg, 'warning')
+    return redirect(url_for('login'))
 
 
 @app.route('/logout')
@@ -410,7 +575,14 @@ def require_login():
     """Require authentication for all routes except login and static."""
     allowed = ('login', 'static')
     if request.endpoint and request.endpoint not in allowed and not current_user.is_authenticated:
-        return redirect(url_for('login', next=request.url))
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Authentification requise'}), 401
+        # Chemin relatif uniquement (validé au retour par _safe_next_url)
+        return redirect(url_for('login', next=request.full_path.rstrip('?')))
+    # Auteur des modifications de cette requête, figé en valeurs simples pour le journal
+    # (évite de recharger l'utilisateur pendant un flush)
+    if current_user.is_authenticated:
+        g.audit_actor = (current_user.id, current_user.username)
 
 
 # =============================================================================
@@ -1193,9 +1365,11 @@ def create_usage():
         except ValueError:
             return jsonify({'error': 'Format de date invalide. Utilisez AAAA-MM-JJ'}), 400
 
+    # L'utilisateur est toujours le compte connecté (non falsifiable côté client)
     usage = Usage(
         tube_id=data.get('tube_id'),
-        user_name=data.get('user_name'),
+        user_id=current_user.id,
+        user_name=current_user.username,
         date_out=date_out,
         volume_taken=volume_taken,
         purpose=data.get('purpose'),
@@ -1244,9 +1418,8 @@ def update_usage(usage_id):
     if new_volume_taken is not None:
         usage.volume_taken = new_volume_taken
 
-    # Update other fields
-    if 'user_name' in data:
-        usage.user_name = data['user_name']
+    # Update other fields (user_id / user_name ne sont pas modifiables :
+    # ils identifient qui a fait le prélèvement ; les modifications sont tracées dans audit_log)
     if 'purpose' in data:
         usage.purpose = data['purpose']
     if 'notes' in data:
@@ -1259,6 +1432,41 @@ def update_usage(usage_id):
 
     db.session.commit()
     return jsonify(usage.to_dict())
+
+
+# =============================================================================
+# API - AUDIT LOG
+# =============================================================================
+
+@app.route('/api/audit', methods=['GET'])
+def get_audit_log():
+    """Journal des modifications.
+
+    Filtres : entity (tube, sample, ...), entity_id, user (nom d'utilisateur),
+    search (libellé, ex. code-barres), action, limit (1-2000, défaut 200).
+    Les entrées concernant les comptes utilisateurs ne sont visibles que des admins.
+    """
+    query = AuditLog.query
+    entity = request.args.get('entity', '').strip()
+    if entity:
+        query = query.filter(AuditLog.entity == entity)
+    entity_id = safe_int(request.args.get('entity_id'), None)
+    if entity_id is not None:
+        query = query.filter(AuditLog.entity_id == entity_id)
+    user = request.args.get('user', '').strip()
+    if user:
+        query = query.filter(AuditLog.username == user)
+    action = request.args.get('action', '').strip()
+    if action:
+        query = query.filter(AuditLog.action == action)
+    search = request.args.get('search', '').strip()
+    if search:
+        query = query.filter(AuditLog.label.ilike(f'%{search}%'))
+    if not current_user.is_admin:
+        query = query.filter(AuditLog.entity != 'user')
+    limit = safe_int(request.args.get('limit'), 200, 1, 2000)
+    entries = query.order_by(AuditLog.id.desc()).limit(limit).all()
+    return jsonify([e.to_dict() for e in entries])
 
 
 # =============================================================================
