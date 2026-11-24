@@ -155,18 +155,19 @@ class FakeApp:
     def __init__(self):
         self.ran = False
 
-    def run(self, **kw):
-        self.ran = True
-
 
 def _patch_server(monkeypatch, calls):
     fake = FakeApp()
 
-    def fake_create_app(db_path):
+    def fake_create_app(db_path, behind_proxy=False):
         calls.append(('create_app', db_path))
         return fake
 
+    def fake_serve(application, **kw):
+        application.ran = True
+
     monkeypatch.setattr('dna_sample_manager.app.create_app', fake_create_app)
+    monkeypatch.setattr(cli, 'serve', fake_serve)
     monkeypatch.setattr(cli.webbrowser, 'open', lambda url: None)
     monkeypatch.setattr(cli, 'start_periodic_backups',
                         lambda *a, **kw: calls.append(('periodic', a[3])))
@@ -184,7 +185,7 @@ def test_cli_demarrage_sauvegarde_avant_create_app(tmp_path, monkeypatch):
         return original(*a, **kw)
 
     monkeypatch.setattr(cli, 'backup_database', spy)
-    result = CliRunner().invoke(cli.app, [str(tmp_path), '--backup-interval', '12'])
+    result = CliRunner().invoke(cli.app, [str(tmp_path), '--backup-interval', '12', '--no-browser'])
     assert result.exit_code == 0, result.output
     assert [c[0] for c in calls] == ['backup', 'periodic', 'create_app']
     assert ('periodic', 12.0) in calls
@@ -195,7 +196,7 @@ def test_cli_no_backup(tmp_path, monkeypatch):
     db = make_db(tmp_path / 'dna_samples.db')
     calls = []
     _patch_server(monkeypatch, calls)
-    result = CliRunner().invoke(cli.app, [str(tmp_path), '--no-backup'])
+    result = CliRunner().invoke(cli.app, [str(tmp_path), '--no-backup', '--no-browser'])
     assert result.exit_code == 0, result.output
     assert [c[0] for c in calls] == ['create_app']
     assert list_backups(db) == []

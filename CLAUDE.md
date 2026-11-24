@@ -10,15 +10,20 @@ Application web Flask packagée pour `uvx` / `uv run`.
 - **Frontend** : Bootstrap 5 + Chart.js via CDN (pas de build step, pas de node_modules)
 - **Packaging** : `uv_build` + `pyproject.toml`, entry point `dna-sample-manager`
 - **CLI** : Typer (`cli.py`) — accepte `data_dir` (chemin vers le dossier contenant `dna_samples.db`)
+- **Serveur** : waitress (multi-thread, UN seul processus — SQLite + thread de sauvegarde). Pas de gunicorn multi-workers
 
 ## Lancement
 
 ```bash
 uv run dna-sample-manager ./instance/        # port 5003 par défaut
 uv run dna-sample-manager ./instance/ --port 8080
+uv run dna-sample-manager ./instance/ --no-browser
 ```
 
-Le navigateur s'ouvre automatiquement (via `threading.Timer` + `webbrowser.open`).
+Le navigateur s'ouvre automatiquement (via `threading.Timer` + `webbrowser.open`), sauf `--no-browser`.
+
+Production (VM Linux, systemd + nginx HTTPS) : `deploy/DEPLOIEMENT.md`. Le service lance
+`dna-sample-manager /srv/dna-sample-manager --host 127.0.0.1 --behind-proxy --no-browser --backup-dir …`.
 
 ## Fichiers critiques
 
@@ -26,6 +31,7 @@ Le navigateur s'ouvre automatiquement (via `threading.Timer` + `webbrowser.open`
 |---------|------|
 | `src/dna_sample_manager/app.py` | Tout : modèles SQLAlchemy, helpers, ~50 routes Flask |
 | `src/dna_sample_manager/cli.py` | Entry point CLI, instancie Flask via `create_app(db_path)`, lance les sauvegardes |
+| `deploy/` | Service systemd, conf nginx, guide `DEPLOIEMENT.md` (testé sur Debian 12 dans Docker) |
 | `src/dna_sample_manager/backup.py` | Sauvegarde SQLite (API `backup`, vérification, rotation, thread périodique) |
 | `src/dna_sample_manager/templates/` | 8 templates Jinja2 (Bootstrap 5) |
 | `instance/dna_samples.db` | Base de données SQLite — ne jamais supprimer |
@@ -58,7 +64,7 @@ Box ◄─── (N:1) ───────────────────
 - `safe_int(value, default, min_val, max_val)` — toujours utiliser à la place de `int()` pour les paramètres HTTP
 - `_build_tubes_query(search, box, status, tube_type, limit)` — helper réutilisé par `GET /api/tubes` et `GET /api/tubes/export`
 - `_tubes_to_dicts(tubes)` — sérialise une liste de `Tube` en dicts avec batch-loading des relations
-- `create_app(db_path=None)` — factory Flask, appelée par `cli.py`. `db_path` est un chemin absolu vers le fichier SQLite
+- `create_app(db_path=None, behind_proxy=False)` — factory Flask, appelée par `cli.py`. `db_path` est un chemin absolu vers le fichier SQLite
 - Encodage TSV : `utf-8-sig` (BOM) pour compatibilité Excel Windows
 
 ## Authentification
@@ -111,7 +117,7 @@ Box ◄─── (N:1) ───────────────────
 ## Tests
 
 ```bash
-uv run pytest                # ~95 tests, ~4 s
+uv run pytest                # ~107 tests, ~4 s
 uv run pytest tests/test_tubes.py -k archivage
 ```
 
@@ -138,7 +144,9 @@ Lancer avec : `uv run python <script>.py`
 
 ## Sécurité
 
-- `SECRET_KEY` via `os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))`
+- `SECRET_KEY` (`_load_secret_key`) : `FLASK_SECRET_KEY` sinon fichier `secret_key` (600) à côté de la base, créé au 1er lancement — stable entre redémarrages (sinon tout le monde est déconnecté)
+- `--behind-proxy` : waitress accepte `X-Forwarded-For/Proto/Host` UNIQUEMENT depuis 127.0.0.1 (`cli.waitress_options`) — par défaut waitress les supprime, l'app se croirait alors en HTTP et la vérification CSRF stricte du Referer (HTTPS) serait désactivée. Cookies `Secure`. Ne pas remplacer par `ProxyFix` (waitress supprime les en-têtes avant)
+- Démarrage : avertissement dans les journaux si le compte `admin` a encore le mot de passe `admin`
 - XSS : fonction `esc()` dans les templates pour échapper les données dans les template literals JS
 - CSRF : Flask-WTF `CSRFProtect` sur toutes les requêtes POST/PUT/DELETE. `base.html` expose le jeton (`<meta name="csrf-token">`) et enveloppe `window.fetch` pour ajouter l'en-tête `X-CSRFToken` automatiquement ; les formulaires HTML classiques doivent inclure `<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`
 - Redirection après login : `?next=` n'accepte que des chemins locaux (`_safe_next_url`)

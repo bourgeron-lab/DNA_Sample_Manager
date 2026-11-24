@@ -22,8 +22,12 @@ Le navigateur s'ouvre automatiquement sur `http://127.0.0.1:5003`.
 
 ```bash
 uv run dna-sample-manager ./instance/ --port 8080
-uv run dna-sample-manager ./instance/ --host 0.0.0.0 --port 5003
+uv run dna-sample-manager ./instance/ --no-browser          # ne pas ouvrir le navigateur
 ```
+
+L'app est servie par [waitress](https://docs.pylonsproject.org/projects/waitress/), un serveur
+de production multi-thread en un seul processus (ce qu'il faut pour SQLite). Pour un accès par
+tout le labo, ne pas utiliser `--host 0.0.0.0` (pas de HTTPS) : voir [Mise en production](#mise-en-production).
 
 ## Structure du projet
 
@@ -34,10 +38,14 @@ sandbox_adn/
 │   ├── cli.py                # Point d'entrée CLI (Typer)
 │   └── templates/            # Templates HTML (Bootstrap 5)
 ├── instance/
-│   └── dna_samples.db        # Base de données SQLite
+│   ├── dna_samples.db        # Base de données SQLite
+│   ├── secret_key            # Clé de session (créée au 1er lancement, ne pas partager)
+│   └── backups/              # Sauvegardes automatiques
+│   ├── backup.py             # Sauvegardes de la base
+├── deploy/                   # Mise en production : systemd, nginx, guide
+├── tests/                    # Tests pytest
 ├── pyproject.toml            # Dépendances et configuration du package
 ├── uv.lock                   # Versions exactes des dépendances
-├── run.sh                    # Lanceur alternatif (gunicorn)
 └── import_*.py               # Scripts d'import de données
 ```
 
@@ -130,16 +138,16 @@ uv run pytest
 
 Les tests utilisent une base SQLite temporaire : la base de production n'est jamais touchée.
 
-## Déploiement sur VM
+## Mise en production
 
-```bash
-# Installer uv sur la VM
-curl -LsSf https://astral.sh/uv/install.sh | sh
+Pour que tout le labo y accède, l'app tourne sur une VM Linux :
+- un service **systemd** (redémarrage automatique, compte dédié, droits limités) ;
+- **nginx** devant, pour le HTTPS ;
+- l'option `--behind-proxy`.
 
-# Copier instance/dna_samples.db sur la VM, puis lancer
-uvx --from /chemin/vers/dna_sample_manager-0.1.0-py3-none-any.whl \
-    dna-sample-manager /chemin/vers/données/ --host 0.0.0.0
-```
+Le guide pas à pas, testé de bout en bout sur Debian 12, est dans
+[deploy/DEPLOIEMENT.md](deploy/DEPLOIEMENT.md). Les fichiers prêts à copier sont aussi dans
+`deploy/`.
 
 ## Technologies
 

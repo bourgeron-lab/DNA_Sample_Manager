@@ -33,7 +33,9 @@ def safe_int(value, default=0, min_val=None, max_val=None):
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Clé provisoire : create_app() la remplace par une clé stable (voir _load_secret_key)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # Jeton CSRF valable pour toute la durée de la session (pas d'expiration au bout d'1 h
 # qui casserait l'enregistrement sur une page restée ouverte longtemps)
 app.config['WTF_CSRF_TIME_LIMIT'] = None
@@ -47,17 +49,64 @@ login_manager.login_message = 'Veuillez vous connecter pour accéder à cette pa
 login_manager.login_message_category = 'warning'
 
 
-def create_app(db_path=None):
+SECRET_KEY_FILENAME = 'secret_key'
+
+
+def _load_secret_key(db_path):
+    """Clé de signature des sessions, stable d'un redémarrage à l'autre.
+
+    Priorité : variable FLASK_SECRET_KEY, sinon fichier `secret_key` à côté de la base
+    (créé au premier lancement, lisible par le seul propriétaire). Une clé tirée au hasard
+    à chaque démarrage déconnecterait tout le monde à chaque redémarrage du service.
+    """
+    env_key = os.environ.get('FLASK_SECRET_KEY')
+    if env_key:
+        return env_key
+    if db_path is None:
+        return secrets.token_hex(32)
+    key_file = os.path.join(os.path.dirname(os.path.abspath(db_path)), SECRET_KEY_FILENAME)
+    try:
+        fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        with open(key_file) as f:
+            key = f.read().strip()
+        if len(key) < 32:
+            raise RuntimeError(f'Clé secrète trop courte ou vide dans {key_file} : supprimez ce fichier '
+                               'pour en générer une nouvelle (cela déconnecte les utilisateurs).')
+        return key
+    with os.fdopen(fd, 'w') as f:
+        key = secrets.token_hex(32)
+        f.write(key + '\n')
+    return key
+
+
+def configure_behind_proxy(flask_app):
+    """Mode « derrière nginx en HTTPS » : cookies de session envoyés uniquement en HTTPS.
+
+    La prise en compte des en-têtes X-Forwarded-* (schéma https, nom d'hôte, IP du client)
+    est faite par le serveur waitress (voir cli.waitress_options), qui ne les accepte que
+    s'ils viennent de nginx sur 127.0.0.1.
+    """
+    flask_app.config['SESSION_COOKIE_SECURE'] = True
+    flask_app.config['REMEMBER_COOKIE_SECURE'] = True
+
+
+def create_app(db_path=None, behind_proxy=False):
     """Configure and return the Flask application.
 
     Args:
         db_path: Absolute path to the SQLite database file.
                  If None, uses 'sqlite:///dna_samples.db' (Flask instance folder).
+        behind_proxy: True quand l'app est servie derrière un reverse proxy HTTPS (nginx) :
+                 en-têtes X-Forwarded-* pris en compte et cookies réservés à HTTPS.
     """
     if db_path is not None:
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     else:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dna_samples.db'
+    app.config['SECRET_KEY'] = _load_secret_key(db_path)
+    if behind_proxy:
+        configure_behind_proxy(app)
     # SQLite timeout: wait up to 30s if database is locked (e.g. on network volumes)
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'timeout': 30}}
     db.init_app(app)
@@ -76,7 +125,16 @@ def create_app(db_path=None):
             db.session.add(admin)
             db.session.commit()
             print('*** Default admin created (admin/admin) — please change the password! ***')
+        elif default_admin_password_in_use():
+            print("*** ATTENTION : le compte 'admin' a encore le mot de passe 'admin' — "
+                  "changez-le dans Administration > Utilisateurs ! ***")
     return app
+
+
+def default_admin_password_in_use():
+    """True si le compte `admin` existe encore avec le mot de passe par défaut `admin`."""
+    user = User.query.filter_by(username='admin').first()
+    return bool(user and bcrypt.check_password_hash(user.password_hash, 'admin'))
 
 # =============================================================================
 # DATABASE MODELS

@@ -15,3 +15,4 @@ gunicorn.pid
 # Claude Code (config locale)
 .claude/
 .pytest_cache/
+.python/
