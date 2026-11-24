@@ -89,6 +89,25 @@ Box ◄─── (N:1) ───────────────────
 - **Low** : `current_volume >= 10 AND initial_volume IS NOT NULL AND current_volume < initial_volume * 0.25`
 - **Available** : `current_volume >= 10 AND (initial_volume IS NULL OR current_volume >= initial_volume * 0.25)`
 
+`Tube.get_status()` (Python) doit rester cohérent avec ce filtre SQL — vérifié par `tests/test_tubes.py::test_filtre_sql_coherent_avec_get_status`.
+
+## Archivage des tubes (`tube_type = 'deleted'`)
+
+- Passage en `deleted` : position libérée (`box_id`, `position_row`, `position_col` → NULL) et préfixe `[Archivé le …] Boîte, Congélateur, Position` ajouté en tête des notes (fusionné avec les notes envoyées par le formulaire)
+- Tant que le tube est archivé, `box_id`/`position_*` envoyés à `PUT /api/tubes/<id>` sont ignorés (le formulaire d'édition renvoie toujours les anciennes valeurs)
+- Désarchivage : repasser `tube_type` à `stock`/`working` avec une nouvelle position
+- Liste par défaut : exclut `deleted` (les tubes à `tube_type` NULL restent visibles)
+
+## Tests
+
+```bash
+uv run pytest                # ~80 tests, ~2 s
+uv run pytest tests/test_tubes.py -k archivage
+```
+
+- `tests/conftest.py` : base SQLite temporaire, vidée et re-remplie avant chaque test (jamais la base de prod) ; clients `anon` / `admin` / `tech` qui gèrent login + jeton CSRF comme le navigateur
+- Ajouter un test de régression pour chaque bug corrigé
+
 ## Scripts utilitaires (racine)
 
 Scripts à usage ponctuel pour l'import/migration de données. Ne font pas partie du package.

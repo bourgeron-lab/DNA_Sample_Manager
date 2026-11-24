@@ -89,6 +89,14 @@ Ces scripts servent à importer/migrer des données et doivent être lancés dir
 | `check_data.py` | Vérification de cohérence des données |
 | `analyze_positions.py` | Analyse des positions dans les boîtes |
 
+## Tests
+
+```bash
+uv run pytest
+```
+
+Les tests utilisent une base SQLite temporaire : la base de production n'est jamais touchée.
+
 ## Déploiement sur VM
 
 ```bash
