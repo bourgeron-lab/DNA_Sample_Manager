@@ -25,7 +25,8 @@ Le navigateur s'ouvre automatiquement (via `threading.Timer` + `webbrowser.open`
 | Fichier | Rôle |
 |---------|------|
 | `src/dna_sample_manager/app.py` | Tout : modèles SQLAlchemy, helpers, ~50 routes Flask |
-| `src/dna_sample_manager/cli.py` | Entry point CLI, instancie Flask via `create_app(db_path)` |
+| `src/dna_sample_manager/cli.py` | Entry point CLI, instancie Flask via `create_app(db_path)`, lance les sauvegardes |
+| `src/dna_sample_manager/backup.py` | Sauvegarde SQLite (API `backup`, vérification, rotation, thread périodique) |
 | `src/dna_sample_manager/templates/` | 8 templates Jinja2 (Bootstrap 5) |
 | `instance/dna_samples.db` | Base de données SQLite — ne jamais supprimer |
 | `pyproject.toml` | Dépendances : flask, flask-sqlalchemy, flask-login, flask-bcrypt, flask-wtf (CSRF), openpyxl, typer |
@@ -98,10 +99,19 @@ Box ◄─── (N:1) ───────────────────
 - Désarchivage : repasser `tube_type` à `stock`/`working` avec une nouvelle position
 - Liste par défaut : exclut `deleted` (les tubes à `tube_type` NULL restent visibles)
 
+## Sauvegardes (`backup.py`)
+
+- Au démarrage (dans `cli.py`, AVANT `create_app` qui peut créer des tables) puis toutes les `--backup-interval` h (24 par défaut) via un thread daemon
+- Dossier : `--backup-dir` (défaut `<dossier de la base>/backups`), rotation `--keep` (30). Noms `dna_samples_AAAA-MM-JJ_HHMMSS[_n].db`
+- `--backup-only` : sauvegarde puis quitte ; `--no-backup` : désactive tout
+- Toujours `backup_database()` (API SQLite `Connection.backup` + `integrity_check` + renommage atomique), jamais un `cp` de la base pendant que l'app tourne
+- `prune_backups` ne supprime que les fichiers au format exact des sauvegardes
+- Avant un import ou une migration avec les scripts utilitaires : `uv run dna-sample-manager ./instance/ --backup-only`
+
 ## Tests
 
 ```bash
-uv run pytest                # ~80 tests, ~2 s
+uv run pytest                # ~95 tests, ~4 s
 uv run pytest tests/test_tubes.py -k archivage
 ```
 
@@ -111,6 +121,7 @@ uv run pytest tests/test_tubes.py -k archivage
 ## Scripts utilitaires (racine)
 
 Scripts à usage ponctuel pour l'import/migration de données. Ne font pas partie du package.
+Faire une sauvegarde (`--backup-only`) avant de les lancer sur la base de prod.
 Lancer avec : `uv run python <script>.py`
 
 - `import_individuals.py` / `import_individuals_fast.py` — import depuis TSV
