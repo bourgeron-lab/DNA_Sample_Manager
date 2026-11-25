@@ -1,10 +1,10 @@
 # Pod de maintenance : accès aux volumes quand l'app est ARRÊTÉE
 # (transfert initial de la base, restauration, script d'import). Voir KUBERNETES.md.
-#   kubectl -n dna-sample-manager scale deploy/dna-sample-manager --replicas=0
-#   kubectl -n dna-sample-manager apply -f deploy/kubernetes/maintenance.yaml
+#   kubectl -n $NS scale deploy/dna-sample-manager --replicas=0
+#   kubectl -n $NS apply -f deploy/kubernetes/maintenance.yaml
 #   ...
-#   kubectl -n dna-sample-manager delete pod dna-sample-manager-maintenance
-#   kubectl -n dna-sample-manager scale deploy/dna-sample-manager --replicas=1
+#   kubectl -n $NS delete pod dna-sample-manager-maintenance
+#   kubectl -n $NS scale deploy/dna-sample-manager --replicas=1
 # Même image que l'app (à aligner sur kustomization.yaml).
 apiVersion: v1
 kind: Pod
@@ -21,10 +21,15 @@ spec:
     fsGroup: 10001
     seccompProfile:
       type: RuntimeDefault
+  imagePullSecrets:
+    - name: registry-gitlab
   containers:
     - name: shell
-      image: registry.example.pasteur.fr/ghfc/dna-sample-manager:0.1.0
+      image: registry-gitlab.pasteur.fr/GROUPE/dna-sample-manager:0.1.0
       command: ["sleep", "infinity"]
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {cpu: 500m, memory: 256Mi}
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:

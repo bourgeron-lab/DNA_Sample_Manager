@@ -1,27 +1,28 @@
-# Base SQLite : volume en accès exclusif (ReadWriteOnce) sur un stockage de type BLOC
-# (Ceph RBD, disque cloud, Longhorn...). JAMAIS sur NFS / CephFS / SMB : les verrous
-# SQLite y sont peu fiables et la base peut se corrompre.
+# Stockage Institut Pasteur (voir KUBERNETES.md) :
+#   ceph-block : ReadWriteOnce, classe par défaut, recommandée pour les bases de données
+#   ceph-fs    : ReadWriteMany (partagé) — À NE PAS utiliser pour la base SQLite
+#                (système de fichiers réseau : verrous SQLite peu fiables)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: dna-sample-manager-data
 spec:
   accessModes: [ReadWriteOnce]
-  # storageClassName: <classe de stockage bloc du cluster>
+  storageClassName: ceph-block
   resources:
     requests:
-      storage: 2Gi          # base actuelle : ~8 Mo
+      storage: 2Gi          # base actuelle : ~8 Mo ; agrandissable plus tard
 ---
-# Sauvegardes : idéalement une AUTRE classe de stockage / un autre backend que la base
-# (une panne du stockage de la base ne doit pas emporter les sauvegardes).
-# Ici, NFS est acceptable : les sauvegardes sont écrites puis renommées, jamais modifiées en place.
+# Sauvegardes : même stockage Ceph que la base (le cluster n'en propose pas d'autre).
+# Elles protègent contre les erreurs et la corruption, PAS contre une panne du stockage :
+# garder une copie hors du cluster (voir « Sauvegardes » dans KUBERNETES.md).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: dna-sample-manager-backups
 spec:
   accessModes: [ReadWriteOnce]
-  # storageClassName: <autre classe de stockage>
+  storageClassName: ceph-block
   resources:
     requests:
       storage: 5Gi          # 30 sauvegardes x ~8 Mo, avec beaucoup de marge
