@@ -1106,6 +1106,62 @@ def get_tubes():
         return jsonify({'error': str(e)}), 500
 
 
+
+def _export_cell(value):
+    """Valeur d'une cellule exportée : vide si None (0 reste 0)."""
+    return '' if value is None else value
+
+
+def _send_table(rows, columns, fmt, basename, sheet_title):
+    """Envoie `rows` (liste de dicts) en fichier TSV ou Excel à télécharger.
+
+    `columns` : liste de (clé du dict, en-tête). TSV en utf-8-sig (BOM) pour Excel Windows.
+    """
+    today = datetime.now().strftime('%Y%m%d')
+    headers = [col[1] for col in columns]
+    table = [[_export_cell(row.get(key)) for key, _ in columns] for row in rows]
+
+    if fmt == 'tsv':
+        text_output = StringIO()
+        writer = csv.writer(text_output, delimiter='\t')
+        writer.writerow(headers)
+        writer.writerows(table)
+        output = BytesIO(text_output.getvalue().encode('utf-8-sig'))
+        return send_file(output, mimetype='text/tab-separated-values', as_attachment=True,
+                         download_name=f'{basename}_{today}.tsv')
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='2D3250', end_color='2D3250', fill_type='solid')
+        cell.alignment = Alignment(horizontal='center')
+    for row_idx, values in enumerate(table, start=2):
+        ws.append(values)
+        for col_idx, value in enumerate(values, start=1):
+            # Texte commençant par « = » : rester du texte, pas une formule Excel
+            if isinstance(value, str) and value.startswith('='):
+                ws.cell(row=row_idx, column=col_idx).data_type = 's'
+    ws.freeze_panes = 'A2'
+
+    # Largeur des colonnes d'après l'en-tête et les 100 premières lignes
+    for col_idx, header in enumerate(headers, 1):
+        width = max([len(header)] + [len(str(values[col_idx - 1])) for values in table[:100]])
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(width + 2, 35)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, as_attachment=True, download_name=f'{basename}_{today}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 # Export columns: (dict_key, french_header)
 EXPORT_COLUMNS = [
     ('barcode', 'Barcode'),
@@ -1142,66 +1198,7 @@ def export_tubes():
                                    tube_type=tube_type, limit=50000)
         rows = _tubes_to_dicts(tubes)
 
-        today = datetime.now().strftime('%Y%m%d')
-
-        if fmt == 'tsv':
-            text_output = StringIO()
-            writer = csv.writer(text_output, delimiter='\t')
-            writer.writerow([col[1] for col in EXPORT_COLUMNS])
-            for row in rows:
-                writer.writerow([row.get(col[0], '') or '' for col in EXPORT_COLUMNS])
-
-            output = BytesIO()
-            output.write(text_output.getvalue().encode('utf-8-sig'))
-            output.seek(0)
-
-            return send_file(
-                output,
-                mimetype='text/tab-separated-values',
-                as_attachment=True,
-                download_name=f'tubes_export_{today}.tsv'
-            )
-
-        else:  # xlsx
-            from openpyxl import Workbook
-            from openpyxl.styles import Font, PatternFill, Alignment
-
-            wb = Workbook()
-            ws = wb.active
-            ws.title = 'Tubes'
-
-            header_font = Font(bold=True, color='FFFFFF')
-            header_fill = PatternFill(start_color='2D3250', end_color='2D3250', fill_type='solid')
-
-            headers = [col[1] for col in EXPORT_COLUMNS]
-            ws.append(headers)
-            for cell in ws[1]:
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = Alignment(horizontal='center')
-
-            for row in rows:
-                ws.append([row.get(col[0], '') or '' for col in EXPORT_COLUMNS])
-
-            # Auto-adjust column widths
-            from openpyxl.utils import get_column_letter
-            for col_idx, column in enumerate(EXPORT_COLUMNS, 1):
-                max_length = len(column[1])
-                for row_data in rows[:100]:
-                    val = str(row_data.get(column[0], '') or '')
-                    max_length = max(max_length, len(val))
-                ws.column_dimensions[get_column_letter(col_idx)].width = min(max_length + 2, 35)
-
-            output = BytesIO()
-            wb.save(output)
-            output.seek(0)
-
-            return send_file(
-                output,
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                as_attachment=True,
-                download_name=f'tubes_export_{today}.xlsx'
-            )
+        return _send_table(rows, EXPORT_COLUMNS, fmt, 'tubes_export', 'Tubes')
 
     except Exception as e:
         print(f"EXPORT ERROR: {e}")
@@ -1643,18 +1640,27 @@ def sujets_page():
     return render_template('sujets.html')
 
 
-@app.route('/api/sujets', methods=['GET'])
-def get_sujets():
-    """Get all individuals - paginated and ultra-optimized for large datasets"""
-    search = request.args.get('search', '')
-    family = request.args.get('family', '')
-    project = request.args.get('project', '')
-    page = safe_int(request.args.get('page', 1), default=1, min_val=1)
-    per_page = safe_int(request.args.get('per_page', 25), default=25, min_val=1, max_val=100)
-    
-    # Build base query
-    query = Individual.query
-    
+def _build_sujets_query(search='', family='', project='', with_tubes=False):
+    """Requête (Individual, nb échantillons, nb tubes), triée par ID individu.
+
+    Utilisée par GET /api/sujets et GET /api/sujets/export. Les compteurs sont calculés
+    par des sous-requêtes groupées (pas de requête par sujet).
+    """
+    from sqlalchemy import func
+    sample_counts = db.session.query(
+        Sample.individual_id.label('ind_id'), func.count(Sample.id).label('n')
+    ).group_by(Sample.individual_id).subquery()
+    tube_counts = db.session.query(
+        Sample.individual_id.label('ind_id'), func.count(Tube.id).label('n')
+    ).join(Tube, Tube.sample_id == Sample.id).group_by(Sample.individual_id).subquery()
+
+    query = db.session.query(
+        Individual,
+        func.coalesce(sample_counts.c.n, 0).label('sample_count'),
+        func.coalesce(tube_counts.c.n, 0).label('tube_count'),
+    ).outerjoin(sample_counts, sample_counts.c.ind_id == Individual.id
+    ).outerjoin(tube_counts, tube_counts.c.ind_id == Individual.id)
+
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
@@ -1665,65 +1671,86 @@ def get_sujets():
                 Individual.projects.ilike(search_filter)
             )
         )
-    
     if family:
         query = query.filter(Individual.family_id == family)
-    
     if project:
         query = query.filter(Individual.projects.ilike(f"%{project}%"))
-    
-    # Count efficiently - only when filtering
-    if search or family or project:
-        total = query.count()
-    else:
-        # For full table, use fast query
-        total = db.session.query(Individual.id).count()
-    
-    # Get paginated results
-    individuals = query.order_by(Individual.individual_id).offset((page - 1) * per_page).limit(per_page).all()
-    
+    if with_tubes:
+        query = query.filter(tube_counts.c.n > 0)
+    return query.order_by(Individual.individual_id)
+
+
+def _sujet_row(ind, sample_count, tube_count):
+    return {
+        'id': ind.id,
+        'individual_id': ind.individual_id,
+        'aliases': ind.aliases,
+        'family_id': ind.family_id,
+        'sex': ind.sex,
+        'sex_display': ind.get_sex_display(),
+        'phenotype': ind.phenotype,
+        'projects': ind.projects,
+        'other_family_codes': ind.other_family_codes,
+        'notes': ind.notes,
+        'sample_count': sample_count,
+        'tube_count': tube_count,
+        'created_at': ind.created_at.isoformat() if ind.created_at else None,
+        'updated_at': ind.updated_at.isoformat() if ind.updated_at else None,
+    }
+
+
+def _sujets_filters_from_request():
+    return dict(
+        search=request.args.get('search', ''),
+        family=request.args.get('family', ''),
+        project=request.args.get('project', ''),
+        with_tubes=request.args.get('with_tubes', '') in ('1', 'true', 'on'),
+    )
+
+
+@app.route('/api/sujets', methods=['GET'])
+def get_sujets():
+    """Sujets paginés, avec leurs nombres d'échantillons et de tubes."""
+    page = safe_int(request.args.get('page', 1), default=1, min_val=1)
+    per_page = safe_int(request.args.get('per_page', 25), default=25, min_val=1, max_val=100)
+
+    query = _build_sujets_query(**_sujets_filters_from_request())
+    total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
-    
-    # Get tube counts per individual (via samples) in one query
-    individual_ids = [ind.id for ind in individuals]
-    tube_counts = {}
-    if individual_ids:
-        from sqlalchemy import func, text
-        counts = db.session.query(
-            Sample.individual_id,
-            func.count(Tube.id)
-        ).join(Tube, Tube.sample_id == Sample.id
-        ).filter(Sample.individual_id.in_(individual_ids)
-        ).group_by(Sample.individual_id).all()
-        tube_counts = {ind_id: count for ind_id, count in counts}
-    
-    # Build result with tube counts
-    result = []
-    for ind in individuals:
-        result.append({
-            'id': ind.id,
-            'individual_id': ind.individual_id,
-            'aliases': ind.aliases,
-            'family_id': ind.family_id,
-            'sex': ind.sex,
-            'sex_display': ind.get_sex_display(),
-            'phenotype': ind.phenotype,
-            'projects': ind.projects,
-            'other_family_codes': ind.other_family_codes,
-            'notes': ind.notes,
-            'sample_count': tube_counts.get(ind.id, 0),
-            'samples': [],  # Load on demand via details
-            'created_at': ind.created_at.isoformat() if ind.created_at else None,
-            'updated_at': ind.updated_at.isoformat() if ind.updated_at else None
-        })
-    
+    rows = query.offset((page - 1) * per_page).limit(per_page).all()
+
     return jsonify({
-        'sujets': result,
+        'sujets': [_sujet_row(*row) for row in rows],
         'total': total,
         'page': page,
         'per_page': per_page,
         'pages': total_pages
     })
+
+
+SUJETS_EXPORT_COLUMNS = [
+    ('individual_id', 'ID Individu'),
+    ('aliases', 'Aliases'),
+    ('family_id', 'Famille'),
+    ('other_family_codes', 'Autres codes famille'),
+    ('sex_display', 'Sexe'),
+    ('phenotype', 'Phénotype'),
+    ('projects', 'Projets'),
+    ('sample_count', 'Échantillons'),
+    ('tube_count', 'Tubes'),
+    ('notes', 'Notes'),
+]
+
+
+# Doit rester AVANT /api/sujets/<int:id>
+@app.route('/api/sujets/export', methods=['GET'])
+def export_sujets():
+    """Export des sujets filtrés (mêmes filtres que la liste, sans pagination) en TSV ou Excel."""
+    fmt = request.args.get('format', 'tsv')
+    if fmt not in ('tsv', 'xlsx'):
+        return jsonify({'error': 'Format must be tsv or xlsx'}), 400
+    rows = [_sujet_row(*row) for row in _build_sujets_query(**_sujets_filters_from_request()).all()]
+    return _send_table(rows, SUJETS_EXPORT_COLUMNS, fmt, 'sujets_export', 'Sujets')
 
 
 @app.route('/api/sujets/<int:id>', methods=['GET'])

@@ -16,16 +16,36 @@
 <!-- Filtres -->
 <div class="filter-section">
     <div class="row g-3">
-        <div class="col-md-10">
+        <div class="col-md-6">
             <div class="search-box">
                 <i class="bi bi-search"></i>
                 <input type="text" class="form-control" id="searchInput" placeholder="Rechercher par ID, famille, projet...">
             </div>
         </div>
-        <div class="col-md-2">
-            <button class="btn btn-outline-secondary w-100" onclick="loadSujets()">
+        <div class="col-md-2 d-flex align-items-center">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="withTubesFilter">
+                <label class="form-check-label" for="withTubesFilter">Avec tubes uniquement</label>
+            </div>
+        </div>
+        <div class="col-md-4 d-flex gap-2">
+            <button class="btn btn-outline-secondary flex-fill" onclick="loadSujets()">
                 <i class="bi bi-arrow-clockwise"></i> Actualiser
             </button>
+            <div class="btn-group flex-fill">
+                <button class="btn btn-outline-success dropdown-toggle w-100" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-download"></i> Exporter
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" onclick="exportSujets('tsv'); return false;">
+                        <i class="bi bi-filetype-csv"></i> TSV (texte tabulé)
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportSujets('xlsx'); return false;">
+                        <i class="bi bi-file-earmark-excel"></i> Excel (.xlsx)
+                    </a></li>
+                </ul>
+            </div>
         </div>
     </div>
 </div>
@@ -42,13 +62,14 @@
                         <th>Famille</th>
                         <th>Sexe</th>
                         <th>Projets</th>
-                        <th>Tubes</th>
+                        <th class="text-center">Échantillons</th>
+                        <th class="text-center">Tubes</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="sujetsTable">
                     <tr>
-                        <td colspan="7" class="text-center py-4">
+                        <td colspan="8" class="text-center py-4">
                             <div class="spinner-border text-primary" role="status"></div>
                         </td>
                     </tr>
@@ -224,6 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
     
+    document.getElementById('withTubesFilter').addEventListener('change', function() {
+        currentPage = 1;
+        loadSujets();
+    });
+
     document.getElementById('perPageSelect').addEventListener('change', function() {
         perPage = parseInt(this.value);
         currentPage = 1;
@@ -231,13 +257,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-async function loadSujets() {
-    const search = document.getElementById('searchInput').value;
-    
+// Filtres communs à la liste et à l'export
+function sujetsFilterParams() {
     const params = new URLSearchParams();
+    const search = document.getElementById('searchInput').value;
+    if (search) params.append('search', search);
+    if (document.getElementById('withTubesFilter').checked) params.append('with_tubes', '1');
+    return params;
+}
+
+function exportSujets(format) {
+    const params = sujetsFilterParams();
+    params.append('format', format);
+    window.location.href = '/api/sujets/export?' + params.toString();
+}
+
+async function loadSujets() {
+    const params = sujetsFilterParams();
     params.append('page', currentPage);
     params.append('per_page', perPage);
-    if (search) params.append('search', search);
     
     try {
         const response = await fetch('/api/sujets?' + params.toString());
@@ -256,7 +294,7 @@ async function loadSujets() {
     } catch (error) {
         console.error('Erreur:', error);
         document.getElementById('sujetsTable').innerHTML = 
-            '<tr><td colspan="6" class="text-center py-4 text-danger">Erreur lors du chargement des données</td></tr>';
+            '<tr><td colspan="8" class="text-center py-4 text-danger">Erreur lors du chargement des données</td></tr>';
     }
 }
 
@@ -264,7 +302,7 @@ function renderTable() {
     const tbody = document.getElementById('sujetsTable');
     
     if (sujetsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Aucun sujet trouvé</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">Aucun sujet trouvé</td></tr>';
         return;
     }
     
@@ -275,7 +313,8 @@ function renderTable() {
             <td>${esc(s.family_id) || '-'}</td>
             <td><span class="badge ${s.sex === 1 ? 'bg-primary' : s.sex === 2 ? 'bg-danger' : 'bg-secondary'}">${esc(s.sex_display)}</span></td>
             <td><small>${s.projects ? esc(s.projects.length > 25 ? s.projects.substring(0, 25) + '...' : s.projects) : '-'}</small></td>
-            <td class="text-center"><span class="badge bg-info">${s.sample_count}</span></td>
+            <td class="text-center"><span class="badge ${s.sample_count ? 'bg-secondary' : 'bg-light text-muted'}">${s.sample_count}</span></td>
+            <td class="text-center"><span class="badge ${s.tube_count ? 'bg-info' : 'bg-light text-muted'}">${s.tube_count}</span></td>
             <td>
                 <button class="btn btn-sm btn-outline-info btn-action" onclick="showDetails(${s.id})" title="Détails">
                     <i class="bi bi-eye"></i>
