@@ -1,0 +1,51 @@
+# Service systemd — DNA Sample Manager
+# Installation : voir deploy/DEPLOIEMENT.md
+#   sudo cp deploy/dna-sample-manager.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now dna-sample-manager
+#
+# Chemins à adapter :
+#   /opt/dna-sample-manager           code + environnement Python (.venv)
+#   /srv/dna-sample-manager           données : dna_samples.db + secret_key
+#   /srv/dna-sample-manager-backups   sauvegardes (idéalement un autre disque / un montage)
+
+[Unit]
+Description=DNA Sample Manager (gestion des échantillons ADN)
+After=network-online.target
+Wants=network-online.target
+# Si les sauvegardes sont sur un montage réseau, attendre qu'il soit monté :
+RequiresMountsFor=/srv/dna-sample-manager /srv/dna-sample-manager-backups
+
+[Service]
+Type=simple
+User=dnasm
+Group=dnasm
+WorkingDirectory=/opt/dna-sample-manager
+# Clé de session facultative : sinon elle est créée dans /srv/dna-sample-manager/secret_key
+EnvironmentFile=-/etc/dna-sample-manager.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/dna-sample-manager/.venv/bin/dna-sample-manager /srv/dna-sample-manager \
+    --host 127.0.0.1 --port 5003 \
+    --behind-proxy --no-browser \
+    --backup-dir /srv/dna-sample-manager-backups --keep 30 --backup-interval 24
+Restart=on-failure
+RestartSec=5
+# Fichiers créés (sauvegardes, clé, journaux SQLite) lisibles par le seul compte du service
+UMask=0077
+
+# Durcissement : le service ne peut écrire que dans ses dossiers de données
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/srv/dna-sample-manager /srv/dna-sample-manager-backups
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

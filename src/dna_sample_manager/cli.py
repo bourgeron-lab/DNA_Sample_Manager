@@ -1,15 +1,35 @@
 """Command-line interface for dna-sample-manager."""
 
+import logging
 import threading
 import webbrowser
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from waitress import serve
 
 from dna_sample_manager.backup import (
     DEFAULT_INTERVAL_HOURS, DEFAULT_KEEP, backup_database, list_backups, start_periodic_backups,
 )
+
+# En-têtes transmis par nginx (deploy/nginx-dna-sample-manager.conf)
+PROXY_HEADERS = {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}
+
+
+def waitress_options(host: str, port: int, threads: int, behind_proxy: bool) -> dict:
+    """Options du serveur waitress.
+
+    Par défaut, waitress SUPPRIME les en-têtes X-Forwarded-* : derrière nginx, l'app se
+    croirait alors en HTTP (protection CSRF stricte de HTTPS désactivée, IP clientes = 127.0.0.1).
+    En mode proxy, on ne fait confiance à ces en-têtes que s'ils viennent de 127.0.0.1.
+    """
+    opts = dict(host=host, port=port, threads=threads, ident="dna-sample-manager")
+    if behind_proxy:
+        opts.update(trusted_proxy="127.0.0.1", trusted_proxy_count=1,
+                    trusted_proxy_headers=set(PROXY_HEADERS), clear_untrusted_proxy_headers=True)
+    return opts
+
 
 app = typer.Typer(
     name="dna-sample-manager",
@@ -63,6 +83,21 @@ def main(
         bool,
         typer.Option("--backup-only", help="Fait une sauvegarde puis quitte, sans démarrer le serveur"),
     ] = False,
+    behind_proxy: Annotated[
+        bool,
+        typer.Option("--behind-proxy",
+                     help="Servi derrière un reverse proxy HTTPS (nginx) sur la même machine : "
+                          "en-têtes X-Forwarded-* acceptés s'ils viennent de 127.0.0.1, "
+                          "cookies réservés à HTTPS."),
+    ] = False,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open-browser/--no-browser", help="Ouvrir le navigateur au démarrage"),
+    ] = True,
+    threads: Annotated[
+        int,
+        typer.Option("--threads", min=1, max=64, help="Nombre de requêtes traitées en parallèle"),
+    ] = 8,
 ) -> None:
     """Démarre l'application DNA Sample Manager.
 
@@ -105,13 +140,21 @@ def main(
                                log=lambda msg: typer.echo(msg, err=msg.startswith("ERREUR")))
     typer.echo("=" * 50)
 
-    flask_app = create_app(db_path=db_path)
+    if behind_proxy and host not in ("127.0.0.1", "localhost", "::1"):
+        typer.echo(f"ATTENTION — --behind-proxy avec --host {host} : l'app serait joignable sans "
+                   "passer par nginx (donc sans HTTPS). Utilisez --host 127.0.0.1.", err=True)
 
-    # Ouvrir le navigateur après un court délai (le temps que Flask démarre)
-    url = f"http://{host}:{port}"
-    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    flask_app = create_app(db_path=db_path, behind_proxy=behind_proxy)
 
-    flask_app.run(host=host, port=port, debug=False, threaded=True)
+    if open_browser:
+        # Ouvrir le navigateur après un court délai (le temps que le serveur démarre)
+        url = f"http://{host}:{port}"
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    # Serveur WSGI de production (multi-thread, un seul processus : adapté à SQLite,
+    # et le thread de sauvegarde tourne dans ce même processus)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    serve(flask_app, **waitress_options(host, port, threads, behind_proxy))
 
 
 if __name__ == "__main__":
