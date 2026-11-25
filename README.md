@@ -89,6 +89,39 @@ Ces scripts servent à importer/migrer des données et doivent être lancés dir
 | `check_data.py` | Vérification de cohérence des données |
 | `analyze_positions.py` | Analyse des positions dans les boîtes |
 
+## Sauvegardes
+
+La base est sauvegardée **automatiquement** :
+- au démarrage de l'application (avant toute modification du schéma) ;
+- puis toutes les 24 h tant qu'elle tourne.
+
+Les sauvegardes vont dans `instance/backups/` (`dna_samples_AAAA-MM-JJ_HHMMSS.db`) ; les **30 plus récentes** sont conservées. Chaque copie est faite avec l'API de sauvegarde de SQLite (cohérente même pendant que l'app écrit) et vérifiée (`PRAGMA integrity_check`) avant d'être gardée.
+
+```bash
+# Sauvegarde immédiate, sans démarrer le serveur (ex. avant un import ou une migration)
+uv run dna-sample-manager ./instance/ --backup-only
+
+# Sauvegardes sur un autre disque (recommandé : protège aussi d'une panne du disque de la base)
+uv run dna-sample-manager ./instance/ --backup-dir /Volumes/autre_disque/dna_backups --keep 60
+
+# Autre rythme, ou désactivation
+uv run dna-sample-manager ./instance/ --backup-interval 6
+uv run dna-sample-manager ./instance/ --no-backup
+```
+
+### Restaurer une sauvegarde
+
+1. Arrêter l'application (`Ctrl+C`).
+2. Mettre de côté la base actuelle (ne pas la supprimer) :
+   ```bash
+   mv instance/dna_samples.db instance/dna_samples.db.avant-restauration
+   ```
+3. Copier la sauvegarde choisie à la place :
+   ```bash
+   cp instance/backups/dna_samples_2026-11-24_170000.db instance/dna_samples.db
+   ```
+4. Relancer l'application.
+
 ## Tests
 
 ```bash
