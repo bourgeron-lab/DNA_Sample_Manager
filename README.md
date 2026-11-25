@@ -76,6 +76,7 @@ Les requêtes qui modifient des données sont protégées contre le CSRF (jeton 
 | GET | `/api/samples` | Échantillons |
 | GET | `/api/tubes` | Tubes (filtres : search, box, status, type) |
 | GET | `/api/tubes/export` | Export tubes (`?format=tsv` ou `?format=xlsx`) |
+| GET | `/api/sujets/export` | Export sujets (`?format=tsv` ou `?format=xlsx`, filtres `search`, `with_tubes=1`) |
 | GET | `/api/boxes` | Boîtes de stockage |
 | GET | `/api/usages` | Historique d'utilisation des tubes |
 | POST | `/api/usages` | Enregistrer une utilisation |

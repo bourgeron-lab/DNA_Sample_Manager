@@ -65,6 +65,8 @@ Box ◄─── (N:1) ───────────────────
 - `safe_int(value, default, min_val, max_val)` — toujours utiliser à la place de `int()` pour les paramètres HTTP
 - `_build_tubes_query(search, box, status, tube_type, limit)` — helper réutilisé par `GET /api/tubes` et `GET /api/tubes/export`
 - `_tubes_to_dicts(tubes)` — sérialise une liste de `Tube` en dicts avec batch-loading des relations
+- `_build_sujets_query(search, family, project, with_tubes)` — requête `(Individual, nb échantillons, nb tubes)` (sous-requêtes groupées), réutilisée par `GET /api/sujets` et `GET /api/sujets/export`
+- `_send_table(rows, columns, fmt, basename, sheet_title)` — réponse TSV/xlsx commune aux exports (0 exporté tel quel, texte « =… » jamais interprété comme formule Excel)
 - `create_app(db_path=None, behind_proxy=False)` — factory Flask, appelée par `cli.py`. `db_path` est un chemin absolu vers le fichier SQLite
 - Encodage TSV : `utf-8-sig` (BOM) pour compatibilité Excel Windows
 
@@ -84,6 +86,8 @@ Box ◄─── (N:1) ───────────────────
 - `GET /tubes`, `GET /boxes`, `GET /sujets`, `GET /samples` — pages UI
 - `GET /api/tubes?search=&box=&status=&type=&limit=&page=` — liste paginée avec filtres
 - `GET /api/tubes/export?format=tsv|xlsx&search=&box=&status=&type=` — export (doit être avant `/api/tubes/<int:id>`)
+- `GET /api/sujets?search=&family=&project=&with_tubes=1&page=&per_page=` — sujets paginés avec `sample_count` et `tube_count`
+- `GET /api/sujets/export?format=tsv|xlsx&…` — mêmes filtres, sans pagination (avant `/api/sujets/<int:id>`)
 - `GET /api/usages?tube=` — historique d'utilisation des tubes
 - `POST /api/usages` — enregistrer une utilisation (déduit le volume du tube)
 - `PUT /api/usages/<int:id>` — modifier un usage record (ajuste le volume du tube selon le delta)
@@ -119,7 +123,7 @@ Box ◄─── (N:1) ───────────────────
 ## Tests
 
 ```bash
-uv run pytest                # ~111 tests, ~4 s
+uv run pytest                # ~121 tests, ~4 s
 uv run pytest tests/test_tubes.py -k archivage
 ```
 
@@ -142,7 +146,7 @@ Lancer avec : `uv run python <script>.py`
 
 - `instance/dna_samples.db` — données de production
 - `uv.lock` — ne modifier qu'en changeant `pyproject.toml` puis `uv lock`
-- L'ordre des routes Flask dans `app.py` : `/api/tubes/export` doit rester avant `/api/tubes/<int:id>`
+- L'ordre des routes Flask dans `app.py` : `/api/tubes/export` doit rester avant `/api/tubes/<int:id>` (idem `/api/sujets/export`)
 
 ## Sécurité
 
