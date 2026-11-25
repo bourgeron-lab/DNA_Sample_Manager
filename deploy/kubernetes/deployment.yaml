@@ -21,6 +21,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
+      # Registre privé (GitLab Pasteur ou Harbor) : secret docker-registry créé dans le namespace
+      # (voir KUBERNETES.md). Sans effet si l'image est publique.
+      imagePullSecrets:
+        - name: registry-gitlab
       containers:
         - name: app
           image: dna-sample-manager
@@ -60,12 +64,18 @@ spec:
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 10
+          # Quotas du namespace : 4 CPU, 12 Gi de mémoire, 20 Gi de stockage éphémère.
+          # Mesuré : ~60 Mo au repos, ~180 Mo pendant un export Excel de tous les sujets.
+          # Dépasser la limite mémoire ou de stockage éphémère redémarre le pod ; le CPU est seulement plafonné.
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
+              ephemeral-storage: 64Mi
             limits:
+              cpu: "1"
               memory: 1Gi
+              ephemeral-storage: 512Mi      # /tmp (256 Mi max) + journaux du conteneur
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

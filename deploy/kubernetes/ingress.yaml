@@ -1,24 +1,21 @@
-# HTTPS assuré par le contrôleur Ingress du cluster.
+# Ingress Institut Pasteur : contrôleur Traefik (ingress-nginx retiré en mars 2026).
+#   - classe « internal » : accessible depuis le réseau Pasteur uniquement (base de données
+#     de sujets : NE PAS utiliser « external », qui publie l'app sur internet)
+#   - nom d'hôte dans le domaine du cluster : *.pasteur.cloud (k8sprod-02),
+#     *.dev.pasteur.cloud (k8sdev-01). Certificat HTTPS fourni automatiquement.
+#   - les annotations nginx.ingress.kubernetes.io/* sont ignorées par Traefik
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: dna-sample-manager
-  annotations:
-    # Avec cert-manager, le certificat est obtenu automatiquement (nom de l'émetteur à demander) :
-    # cert-manager.io/cluster-issuer: <émetteur>
-    # Avec ingress-nginx, pour les exports Excel volumineux :
-    # nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
 spec:
-  # ingressClassName: <nginx | traefik | ...>
-  tls:
-    - hosts: [adn.example.pasteur.fr]
-      secretName: dna-sample-manager-tls
+  ingressClassName: internal
   rules:
-    - host: adn.example.pasteur.fr
+    - host: dna-sample-manager.pasteur.cloud
       http:
         paths:
           - path: /
-            pathType: Prefix
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: dna-sample-manager

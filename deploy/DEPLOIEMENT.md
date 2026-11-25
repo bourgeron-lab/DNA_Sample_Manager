@@ -172,6 +172,7 @@ droits 600. Elle permet aux utilisateurs de rester connectés quand le service r
 
 ## Et Kubernetes ?
 
-Si le labo a accès à un cluster Kubernetes, voir [kubernetes/KUBERNETES.md](kubernetes/KUBERNETES.md).
+Les clusters Kubernetes de la DSI (k8sprod-02, k8sdev-01) sont une alternative à cette VM : voir
+[kubernetes/KUBERNETES.md](kubernetes/KUBERNETES.md).
 Les contraintes sont les mêmes : une seule copie de l'app et la base sur un disque non partagé.
 Sans cluster existant, cette VM reste la solution la plus simple.

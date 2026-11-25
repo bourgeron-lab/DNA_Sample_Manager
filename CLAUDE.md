@@ -32,7 +32,7 @@ Production (VM Linux, systemd + nginx HTTPS) : `deploy/DEPLOIEMENT.md`. Le servi
 | `src/dna_sample_manager/app.py` | Tout : modèles SQLAlchemy, helpers, ~50 routes Flask |
 | `src/dna_sample_manager/cli.py` | Entry point CLI, instancie Flask via `create_app(db_path)`, lance les sauvegardes |
 | `deploy/` | Service systemd, conf nginx, guide `DEPLOIEMENT.md` (testé sur Debian 12 dans Docker) |
-| `deploy/kubernetes/` + `Dockerfile` | Manifestes kustomize (1 réplique, `Recreate`, PVC RWO bloc), guide `KUBERNETES.md` (testé sur k3s). `.dockerignore` exclut `instance/`, `*.db`, `*.tsv` — vérifié par un test |
+| `deploy/kubernetes/` + `Dockerfile` | Manifestes kustomize adaptés aux clusters Pasteur (1 réplique, `Recreate`, PVC `ceph-block`, Ingress Traefik classe `internal`, `*.pasteur.cloud`), guide `KUBERNETES.md` (testé sur k3s, pas encore sur les clusters Pasteur). `.dockerignore` exclut `instance/`, `*.db`, `*.tsv` — vérifié par un test |
 | `src/dna_sample_manager/backup.py` | Sauvegarde SQLite (API `backup`, vérification, rotation, thread périodique) |
 | `src/dna_sample_manager/templates/` | 8 templates Jinja2 (Bootstrap 5) |
 | `instance/dna_samples.db` | Base de données SQLite — ne jamais supprimer |
@@ -151,7 +151,7 @@ Lancer avec : `uv run python <script>.py`
 ## Sécurité
 
 - `SECRET_KEY` (`_load_secret_key`) : `FLASK_SECRET_KEY` sinon fichier `secret_key` (600) à côté de la base, créé au 1er lancement — stable entre redémarrages (sinon tout le monde est déconnecté)
-- `--behind-proxy` : waitress accepte `X-Forwarded-For/Proto/Host` UNIQUEMENT depuis `--trusted-proxy` (127.0.0.1 par défaut = nginx local ; `*` dans Kubernetes, protégé par la NetworkPolicy) (`cli.waitress_options`) — par défaut waitress les supprime, l'app se croirait alors en HTTP et la vérification CSRF stricte du Referer (HTTPS) serait désactivée. Cookies `Secure`. Ne pas remplacer par `ProxyFix` (waitress supprime les en-têtes avant)
+- `--behind-proxy` : waitress accepte `X-Forwarded-For/Proto/Host` UNIQUEMENT depuis `--trusted-proxy` (127.0.0.1 par défaut = nginx local ; `*` dans Kubernetes, où seul l'Ingress joint le pod : namespaces isolés à Pasteur, sinon `networkpolicy.yaml`) (`cli.waitress_options`) — par défaut waitress les supprime, l'app se croirait alors en HTTP et la vérification CSRF stricte du Referer (HTTPS) serait désactivée. Cookies `Secure`. Ne pas remplacer par `ProxyFix` (waitress supprime les en-têtes avant)
 - Démarrage : avertissement dans les journaux si le compte `admin` a encore le mot de passe `admin`
 - XSS : fonction `esc()` dans les templates pour échapper les données dans les template literals JS
 - CSRF : Flask-WTF `CSRFProtect` sur toutes les requêtes POST/PUT/DELETE. `base.html` expose le jeton (`<meta name="csrf-token">`) et enveloppe `window.fetch` pour ajouter l'en-tête `X-CSRFToken` automatiquement ; les formulaires HTML classiques doivent inclure `<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`

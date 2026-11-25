@@ -1,16 +1,15 @@
-# DNA Sample Manager — déploiement Kubernetes (kustomize)
+# DNA Sample Manager — déploiement Kubernetes (kustomize), adapté aux clusters de
+# l'Institut Pasteur (k8sprod-02 / k8sdev-01). Voir KUBERNETES.md.
 #   kubectl apply -k deploy/kubernetes/
 #
-# À ADAPTER (voir KUBERNETES.md) :
-#   - namespace                       (ci-dessous)
-#   - image                           (ci-dessous : registre + version)
-#   - storageClassName                (pvc.yaml : stockage bloc, PAS de NFS pour la base)
-#   - host / ingressClassName / TLS   (ingress.yaml)
-#   - namespace du contrôleur Ingress (networkpolicy.yaml)
+# À ADAPTER :
+#   - namespace   (ci-dessous : nom attribué par la DSI, convention <projet>-prod / <projet>-dev)
+#   - image       (ci-dessous : registre GitLab Pasteur ou Harbor + version ; idem maintenance.yaml)
+#   - host        (ingress.yaml : <nom>.pasteur.cloud en prod, <nom>.dev.pasteur.cloud en dev)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: dna-sample-manager
+namespace: dna-sample-manager-prod
 
 labels:
   - pairs:
@@ -22,9 +21,10 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
-  - networkpolicy.yaml
+  # networkpolicy.yaml : inutile à Pasteur (namespaces isolés par la plateforme) ;
+  # à ajouter sur un cluster sans isolation, en adaptant le namespace du contrôleur Ingress.
 
 images:
   - name: dna-sample-manager
-    newName: registry.example.pasteur.fr/ghfc/dna-sample-manager
+    newName: registry-gitlab.pasteur.fr/GROUPE/dna-sample-manager
     newTag: "0.1.0"
