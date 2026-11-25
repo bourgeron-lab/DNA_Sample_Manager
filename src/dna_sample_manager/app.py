@@ -631,7 +631,7 @@ def logout():
 @app.before_request
 def require_login():
     """Require authentication for all routes except login and static."""
-    allowed = ('login', 'static')
+    allowed = ('login', 'static', 'healthz')
     if request.endpoint and request.endpoint not in allowed and not current_user.is_authenticated:
         if request.path.startswith('/api/'):
             return jsonify({'error': 'Authentification requise'}), 401
@@ -641,6 +641,19 @@ def require_login():
     # (évite de recharger l'utilisateur pendant un flush)
     if current_user.is_authenticated:
         g.audit_actor = (current_user.id, current_user.username)
+
+
+@app.route('/healthz')
+def healthz():
+    """Sonde de santé (Kubernetes, supervision) : sans authentification, ne révèle rien.
+
+    Vérifie que la base répond. Pas de session créée (pas de cookie).
+    """
+    try:
+        db.session.execute(db.text('SELECT 1'))
+    except Exception:
+        return jsonify({'status': 'error'}), 503
+    return jsonify({'status': 'ok'})
 
 
 # =============================================================================

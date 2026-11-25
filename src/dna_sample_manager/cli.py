@@ -17,16 +17,19 @@ from dna_sample_manager.backup import (
 PROXY_HEADERS = {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"}
 
 
-def waitress_options(host: str, port: int, threads: int, behind_proxy: bool) -> dict:
+def waitress_options(host: str, port: int, threads: int, behind_proxy: bool,
+                     trusted_proxy: str = "127.0.0.1") -> dict:
     """Options du serveur waitress.
 
     Par défaut, waitress SUPPRIME les en-têtes X-Forwarded-* : derrière nginx, l'app se
     croirait alors en HTTP (protection CSRF stricte de HTTPS désactivée, IP clientes = 127.0.0.1).
-    En mode proxy, on ne fait confiance à ces en-têtes que s'ils viennent de 127.0.0.1.
+    En mode proxy, on ne fait confiance à ces en-têtes que s'ils viennent de `trusted_proxy`
+    (127.0.0.1 = nginx sur la même machine ; « * » dans Kubernetes, où seul l'Ingress
+    joint le pod).
     """
     opts = dict(host=host, port=port, threads=threads, ident="dna-sample-manager")
     if behind_proxy:
-        opts.update(trusted_proxy="127.0.0.1", trusted_proxy_count=1,
+        opts.update(trusted_proxy=trusted_proxy, trusted_proxy_count=1,
                     trusted_proxy_headers=set(PROXY_HEADERS), clear_untrusted_proxy_headers=True)
     return opts
 
@@ -90,6 +93,12 @@ def main(
                           "en-têtes X-Forwarded-* acceptés s'ils viennent de 127.0.0.1, "
                           "cookies réservés à HTTPS."),
     ] = False,
+    trusted_proxy: Annotated[
+        str,
+        typer.Option("--trusted-proxy",
+                     help="Avec --behind-proxy : adresse IP du reverse proxy dont on accepte les en-têtes "
+                          "X-Forwarded-* (« * » = tous, ex. dans Kubernetes derrière l'Ingress)"),
+    ] = "127.0.0.1",
     open_browser: Annotated[
         bool,
         typer.Option("--open-browser/--no-browser", help="Ouvrir le navigateur au démarrage"),
@@ -140,9 +149,10 @@ def main(
                                log=lambda msg: typer.echo(msg, err=msg.startswith("ERREUR")))
     typer.echo("=" * 50)
 
-    if behind_proxy and host not in ("127.0.0.1", "localhost", "::1"):
+    if behind_proxy and host not in ("127.0.0.1", "localhost", "::1") and trusted_proxy == "127.0.0.1":
         typer.echo(f"ATTENTION — --behind-proxy avec --host {host} : l'app serait joignable sans "
-                   "passer par nginx (donc sans HTTPS). Utilisez --host 127.0.0.1.", err=True)
+                   "passer par nginx (donc sans HTTPS). Utilisez --host 127.0.0.1, ou --trusted-proxy "
+                   "si le proxy est sur une autre machine (ex. Ingress Kubernetes).", err=True)
 
     flask_app = create_app(db_path=db_path, behind_proxy=behind_proxy)
 
@@ -154,7 +164,7 @@ def main(
     # Serveur WSGI de production (multi-thread, un seul processus : adapté à SQLite,
     # et le thread de sauvegarde tourne dans ce même processus)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    serve(flask_app, **waitress_options(host, port, threads, behind_proxy))
+    serve(flask_app, **waitress_options(host, port, threads, behind_proxy, trusted_proxy))
 
 
 if __name__ == "__main__":

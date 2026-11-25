@@ -1,0 +1,27 @@
+# Base SQLite : volume en accès exclusif (ReadWriteOnce) sur un stockage de type BLOC
+# (Ceph RBD, disque cloud, Longhorn...). JAMAIS sur NFS / CephFS / SMB : les verrous
+# SQLite y sont peu fiables et la base peut se corrompre.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dna-sample-manager-data
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: <classe de stockage bloc du cluster>
+  resources:
+    requests:
+      storage: 2Gi          # base actuelle : ~8 Mo
+---
+# Sauvegardes : idéalement une AUTRE classe de stockage / un autre backend que la base
+# (une panne du stockage de la base ne doit pas emporter les sauvegardes).
+# Ici, NFS est acceptable : les sauvegardes sont écrites puis renommées, jamais modifiées en place.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dna-sample-manager-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  # storageClassName: <autre classe de stockage>
+  resources:
+    requests:
+      storage: 5Gi          # 30 sauvegardes x ~8 Mo, avec beaucoup de marge

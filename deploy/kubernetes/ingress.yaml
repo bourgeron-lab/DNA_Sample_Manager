@@ -1,0 +1,26 @@
+# HTTPS assuré par le contrôleur Ingress du cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dna-sample-manager
+  annotations:
+    # Avec cert-manager, le certificat est obtenu automatiquement (nom de l'émetteur à demander) :
+    # cert-manager.io/cluster-issuer: <émetteur>
+    # Avec ingress-nginx, pour les exports Excel volumineux :
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  # ingressClassName: <nginx | traefik | ...>
+  tls:
+    - hosts: [adn.example.pasteur.fr]
+      secretName: dna-sample-manager-tls
+  rules:
+    - host: adn.example.pasteur.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dna-sample-manager
+                port:
+                  name: http

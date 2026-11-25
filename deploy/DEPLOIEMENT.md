@@ -170,12 +170,8 @@ droits 600. Elle permet aux utilisateurs de rester connectés quand le service r
 - La supprimer déconnecte tout le monde, sans autre conséquence.
 - Pour la fournir vous-même, voir [`dna-sample-manager.env.example`](dna-sample-manager.env.example).
 
-## Pourquoi pas Docker / Kubernetes ?
+## Et Kubernetes ?
 
-Ce serait possible, mais ça n'apporte rien ici. L'app tient dans **un seul processus** qui écrit
-dans **un seul fichier SQLite** sur un disque local : on ne peut ni la répliquer, ni la déplacer
-librement entre machines.
-
-Un service systemd sur une VM est plus simple à maintenir et à sauvegarder. Si un jour
-l'app doit servir beaucoup plus d'utilisateurs simultanés, il faudra d'abord passer de SQLite à
-PostgreSQL.
+Si le labo a accès à un cluster Kubernetes, voir [kubernetes/KUBERNETES.md](kubernetes/KUBERNETES.md).
+Les contraintes sont les mêmes : une seule copie de l'app et la base sur un disque non partagé.
+Sans cluster existant, cette VM reste la solution la plus simple.

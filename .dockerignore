@@ -1,0 +1,21 @@
+# Ne JAMAIS mettre de données dans l'image (base de prod, clé de session, sauvegardes, TSV)
+instance/
+*.db
+*.tsv
+secret_key
+# Inutile dans l'image
+.git/
+.venv/
+.python/
+.pytest_cache/
+**/__pycache__/
+tests/
+deploy/
+temp/
+*.py
+!src/**/*.py
+*.txt
+*.pdf
+*.svg
+*.dot
+.claude/

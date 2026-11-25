@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dna-sample-manager
+spec:
+  # UNE seule copie : SQLite n'accepte qu'un processus écrivain. Ne pas augmenter, pas d'HPA.
+  replicas: 1
+  # Recreate : l'ancien pod est arrêté AVANT que le nouveau démarre (jamais deux pods sur la base)
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {}
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001                 # volumes accessibles en écriture au compte de l'app
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: dna-sample-manager
+          imagePullPolicy: IfNotPresent
+          # Arguments par défaut de l'image (Dockerfile) ; à redéfinir ici pour changer
+          # la rotation ou la fréquence des sauvegardes :
+          # args: ["/data", "--host", "0.0.0.0", "--port", "5003", "--behind-proxy",
+          #        "--trusted-proxy", "*", "--no-browser", "--backup-dir", "/backups",
+          #        "--keep", "30", "--backup-interval", "24"]
+          ports:
+            - name: http
+              containerPort: 5003
+          env:
+            # Clé de session facultative : sinon elle est créée dans /data/secret_key (sur le volume)
+            - name: FLASK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dna-sample-manager
+                  key: flask-secret-key
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: backups
+              mountPath: /backups
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 60          # la sauvegarde au démarrage peut prendre un moment
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dna-sample-manager-data
+        - name: backups
+          persistentVolumeClaim:
+            claimName: dna-sample-manager-backups
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

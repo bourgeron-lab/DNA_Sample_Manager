@@ -176,3 +176,36 @@ def test_cli_mode_serveur(tmp_path, monkeypatch):
 def test_cli_avertit_si_proxy_et_ecoute_publique(tmp_path, monkeypatch):
     _, _, result = _run_cli(tmp_path, monkeypatch, '--behind-proxy', '--host', '0.0.0.0', '--no-browser')
     assert 'ATTENTION' in result.output and '127.0.0.1' in result.output
+
+
+def test_cli_kubernetes_proxy_de_confiance(tmp_path, monkeypatch):
+    """Dans Kubernetes, l'Ingress joint le pod depuis une IP du cluster : --trusted-proxy '*'."""
+    seen, _, result = _run_cli(tmp_path, monkeypatch, '--behind-proxy', '--host', '0.0.0.0',
+                               '--trusted-proxy', '*', '--no-browser')
+    assert seen['opts']['trusted_proxy'] == '*' and seen['host'] == '0.0.0.0'
+    assert 'ATTENTION' not in result.output
+
+
+# --- Sonde de santé ------------------------------------------------------------
+
+def test_healthz_sans_authentification(anon):
+    r = anon.get('/healthz')
+    assert r.status_code == 200 and r.get_json() == {'status': 'ok'}
+    assert 'Set-Cookie' not in r.headers  # pas de session créée à chaque sonde
+
+
+def test_healthz_base_indisponible(app, anon, monkeypatch):
+    def boom(*a, **kw):
+        raise RuntimeError('base indisponible')
+    monkeypatch.setattr(db.session, 'execute', boom)
+    assert anon.get('/healthz').status_code == 503
+
+
+def test_aucune_donnee_dans_l_image_docker():
+    """La base de prod, la clé de session et les TSV ne doivent jamais être copiés dans l'image."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    rules = {line.strip() for line in (root / '.dockerignore').read_text().splitlines()}
+    assert {'instance/', '*.db', '*.tsv', 'secret_key'} <= rules
+    dockerfile = (root / 'Dockerfile').read_text()
+    assert 'COPY . ' not in dockerfile  # copies explicites uniquement
