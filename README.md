@@ -42,7 +42,8 @@ sandbox_adn/
 │   ├── secret_key            # Clé de session (créée au 1er lancement, ne pas partager)
 │   └── backups/              # Sauvegardes automatiques
 │   ├── backup.py             # Sauvegardes de la base
-├── deploy/                   # Mise en production : systemd, nginx, guide
+├── deploy/                   # Mise en production : systemd + nginx (VM), kubernetes/
+├── Dockerfile                # Image pour Kubernetes (aucune donnée dedans)
 ├── tests/                    # Tests pytest
 ├── pyproject.toml            # Dépendances et configuration du package
 ├── uv.lock                   # Versions exactes des dépendances
@@ -148,6 +149,10 @@ Pour que tout le labo y accède, l'app tourne sur une VM Linux :
 Le guide pas à pas, testé de bout en bout sur Debian 12, est dans
 [deploy/DEPLOIEMENT.md](deploy/DEPLOIEMENT.md). Les fichiers prêts à copier sont aussi dans
 `deploy/`.
+
+**Sur Kubernetes** : une image (`Dockerfile`) et des manifestes kustomize sont dans
+`deploy/kubernetes/`. Le guide est [deploy/kubernetes/KUBERNETES.md](deploy/kubernetes/KUBERNETES.md).
+Il faut une seule copie de l'app, et la base sur un volume bloc RWO (pas de NFS).
 
 ## Technologies
 

@@ -1,0 +1,41 @@
+# Pod de maintenance : accès aux volumes quand l'app est ARRÊTÉE
+# (transfert initial de la base, restauration, script d'import). Voir KUBERNETES.md.
+#   kubectl -n dna-sample-manager scale deploy/dna-sample-manager --replicas=0
+#   kubectl -n dna-sample-manager apply -f deploy/kubernetes/maintenance.yaml
+#   ...
+#   kubectl -n dna-sample-manager delete pod dna-sample-manager-maintenance
+#   kubectl -n dna-sample-manager scale deploy/dna-sample-manager --replicas=1
+# Même image que l'app (à aligner sur kustomization.yaml).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dna-sample-manager-maintenance
+  labels:
+    app.kubernetes.io/name: dna-sample-manager-maintenance
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: shell
+      image: registry.example.pasteur.fr/ghfc/dna-sample-manager:0.1.0
+      command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - {name: data, mountPath: /data}
+        - {name: backups, mountPath: /backups}
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: dna-sample-manager-data
+    - name: backups
+      persistentVolumeClaim:
+        claimName: dna-sample-manager-backups

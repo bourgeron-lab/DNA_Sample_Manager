@@ -1,0 +1,30 @@
+# DNA Sample Manager — déploiement Kubernetes (kustomize)
+#   kubectl apply -k deploy/kubernetes/
+#
+# À ADAPTER (voir KUBERNETES.md) :
+#   - namespace                       (ci-dessous)
+#   - image                           (ci-dessous : registre + version)
+#   - storageClassName                (pvc.yaml : stockage bloc, PAS de NFS pour la base)
+#   - host / ingressClassName / TLS   (ingress.yaml)
+#   - namespace du contrôleur Ingress (networkpolicy.yaml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dna-sample-manager
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: dna-sample-manager
+    includeSelectors: true
+
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: dna-sample-manager
+    newName: registry.example.pasteur.fr/ghfc/dna-sample-manager
+    newTag: "0.1.0"
